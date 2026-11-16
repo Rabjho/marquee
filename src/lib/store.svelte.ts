@@ -3,6 +3,7 @@ import {
 	BLINKS,
 	COLORS,
 	DIRECTIONS,
+	DRAWING,
 	FRAMES,
 	INKS,
 	LOOKS,
@@ -15,9 +16,10 @@ import {
 	type LookId,
 	type SizeId
 } from './presets';
+import type { Drawing, Stroke } from './drawing';
 
-export type Stroke = { color: string | null; d: string };
-export type Drawing = { strokes: Stroke[] };
+export type { Drawing, Stroke };
+
 /** A playlist entry: a text message, or a drawing (its text is then unused). */
 export type Card = { id: string; text: string; drawing?: Drawing };
 /** What the sign shows. */
@@ -44,19 +46,27 @@ const newCard = (text = ''): Card => ({ id: crypto.randomUUID(), text });
 const oneOf = <T extends { id: string }>(list: readonly T[], id: unknown, fallback: T['id']) =>
 	list.some((item) => item.id === id) ? (id as T['id']) : fallback;
 
-/** Keeps only well-formed strokes: plain move/line path data in a known ink. */
+/** Keeps only well-formed strokes in a known ink. Reads the older path-string format too. */
 function loadDrawing(raw: unknown): Drawing | undefined {
-	const strokes = (raw as Drawing | undefined)?.strokes;
-	if (!Array.isArray(strokes)) return undefined;
-	const valid = strokes
-		.filter(
-			(s) =>
-				typeof s?.d === 'string' &&
-				/^[ML\d. ]+$/.test(s.d) &&
-				INKS.some((ink) => ink.value === s.color)
-		)
-		.map((s) => ({ color: s.color, d: s.d }));
-	return valid.length ? { strokes: valid } : undefined;
+	const saved = raw as { strokes?: unknown; width?: unknown } | undefined;
+	if (!Array.isArray(saved?.strokes)) return undefined;
+	const strokes: Stroke[] = [];
+	for (const stroke of saved.strokes as { color?: unknown; points?: unknown; d?: unknown }[]) {
+		const ink = INKS.find((option) => option.value === stroke?.color);
+		const points = Array.isArray(stroke?.points)
+			? stroke.points
+			: typeof stroke?.d === 'string'
+				? (stroke.d.match(/\d+(\.\d+)?/g) ?? []).map(Number)
+				: [];
+		const valid = points.length >= 2 && points.length % 2 === 0 && points.every(Number.isFinite);
+		if (ink && valid) strokes.push({ color: ink.value, points });
+	}
+	if (strokes.length === 0) return undefined;
+	const width =
+		typeof saved.width === 'number' && saved.width > 0 && saved.width <= DRAWING.maxWidth
+			? saved.width
+			: DRAWING.view;
+	return { strokes, width };
 }
 
 /** A saved number, kept inside its slider's range. */

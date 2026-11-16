@@ -1,7 +1,7 @@
 // Every control is a short list of presets. No sliders, no pickers.
 
 /** Scroll speed in sign widths per second. */
-export const SPEED = { min: 0.1, max: 1.6, step: 0.05, initial: 0.55 } as const;
+export const SPEED = { min: 0.1, max: 3, initial: 0.55 } as const;
 
 /**
  * Blinks per second. The ceiling is 3 on purpose: faster full-screen flashing is a
@@ -19,7 +19,7 @@ export const SIZES = [
 export const LOOKS = [
 	{ id: 'smooth', label: 'Smooth' },
 	{ id: 'led', label: 'LED' },
-	{ id: 'pixel', label: 'Pixel' }
+	{ id: 'ascii', label: 'ASCII' }
 ] as const;
 
 export const FRAMES = [
@@ -55,8 +55,11 @@ export const STICKERS = [
 	'🎉', '🔥', '😂', '😍', '👍', '🙏', '🍕', '🎵', '💃', '🆘'
 ] as const;
 
-/** Drawings live on a fixed canvas in these units; strokes are stored as SVG path data. */
-export const DRAWING = { width: 150, height: 100, brush: 6 } as const;
+/**
+ * Drawings are a strip this many units tall and as long as needed. `view` is how much of
+ * the strip the drawing pad shows at once, and `maxWidth` how long a drawing can get.
+ */
+export const DRAWING = { height: 100, view: 150, maxWidth: 6000, brush: 6 } as const;
 
 /** Ink colors for drawings. `null` follows the sign color, so it changes with the Color preset. */
 export const INKS = [

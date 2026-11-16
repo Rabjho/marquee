@@ -28,6 +28,8 @@ against a deployed build.
 | `src/lib/components/Stage.svelte` | The playing screen: full screen, rotation, tap to stop |
 | `src/lib/components/Sign.svelte` | The sign surface, shared by the stage and the preview |
 | `src/lib/renderer.ts` | Draws the sign on a canvas: scrolling, looks, frames, blinking, HDR |
+| `src/lib/font5x7.ts` | The dot-matrix font used by the LED and ASCII looks |
+| `src/lib/drawing.ts` | Stroke format for drawings, and trimming them to their content |
 | `src/lib/components/Preview.svelte` | The miniature sign next to the style options |
 | `src/lib/components/DrawingPad.svelte` | Finger drawing: one brush, a few inks, undo, clear |
 | `src/lib/components/DrawingView.svelte` | Renders a stored drawing at any size |

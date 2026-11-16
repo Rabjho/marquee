@@ -251,7 +251,9 @@
 						>
 							<span class="text-fg-muted" aria-hidden="true">▶</span>
 							{#if card.drawing}
-								<DrawingView drawing={card.drawing} height={40} />
+								<span class="min-w-0 overflow-hidden">
+									<DrawingView drawing={card.drawing} height={40} />
+								</span>
 							{:else}
 								<span class="truncate {label ? '' : 'text-fg-muted'}">{label || 'New message'}</span>
 							{/if}
@@ -335,13 +337,20 @@
 			bind:value={() => (store.hdr ? 'on' : 'off'), (value) => (store.hdr = value === 'on')}
 		/>
 
+		<!-- The slider is exponential: each step changes the speed by the same proportion,
+		     which gives fine control at the slow end and a long reach at the fast end. -->
 		<Slider
 			legend="Scroll speed"
 			name="speed"
-			{...SPEED}
+			min={0}
+			max={1}
+			step={0.01}
 			low="Slow"
 			high="Fast"
-			bind:value={store.speed}
+			bind:value={
+				() => Math.log(store.speed / SPEED.min) / Math.log(SPEED.max / SPEED.min),
+				(position) => (store.speed = SPEED.min * (SPEED.max / SPEED.min) ** position)
+			}
 		/>
 		<Choice
 			legend="Scroll direction"
@@ -354,7 +363,9 @@
 		<Slider
 			legend="Blink speed"
 			name="blink-rate"
-			{...BLINK_RATE}
+			min={BLINK_RATE.min}
+			max={BLINK_RATE.max}
+			step={BLINK_RATE.step}
 			low="Slow"
 			high="Fast"
 			bind:value={store.blinkRate}

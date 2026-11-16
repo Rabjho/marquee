@@ -1,12 +1,13 @@
 // Draws the sign onto a canvas, one frame at a time. Everything visual lives here:
-// the scrolling message, the looks (smooth, LED, pixel), frames, blinking and HDR.
+// the scrolling message, the looks (smooth, LED, ASCII), frames, blinking and HDR.
 //
 // Only what is on screen is drawn each frame, so a message can be any length.
 
+import { glyph, GLYPH_HEIGHT } from './font5x7';
 import { DRAWING } from './presets';
 import type { Item } from './store.svelte';
 
-export type Look = 'smooth' | 'led' | 'pixel';
+export type Look = 'smooth' | 'led' | 'ascii';
 export type Frame = 'none' | 'line' | 'bulbs';
 export type Blink = 'flash' | 'strobe' | 'invert';
 
@@ -34,39 +35,86 @@ export type Settings = {
 type Paint = string;
 const HDR = 'hdr';
 
-type Piece = { text: string; emoji: boolean; x: number; width: number };
+/**
+ * A stretch of the message that is measured and drawn as one unit:
+ * - text: letters in the system font, which take the ink color
+ * - emoji: drawn in the system font with their own colors
+ * - dots: letters in the 5×7 dot font (LED and ASCII looks)
+ */
+type Piece = { kind: 'text' | 'emoji' | 'dots'; text: string; x: number; width: number };
 type Layout = { key: string; pieces: Piece[]; width: number; rtl: boolean };
 
-/** Rows of dots in the LED and pixel looks. */
-const ROWS = 32;
+/** How the message is laid out for the current look. */
+type Mode = {
+	/** Width and height of the area the message scrolls through, in layout units. */
+	viewWidth: number;
+	bandHeight: number;
+	/** Height of system-font text and of drawings, in layout units. */
+	textHeight: number;
+	drawingHeight: number;
+	weight: number;
+	/** Whether letters use the dot font. */
+	dots: boolean;
+	/** Positions snap to multiples of this, so dots never land between cells. */
+	snap: number;
+};
+
 /** How long a message that fits stays up before `onend`, when not looping. */
 const HOLD_MS = 3000;
 /** Frame bulbs advance this many times per second. */
 const CHASE_HZ = 3;
 const FONT = "system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif";
+const MONO = "ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace";
 const EMOJI =
 	/((?:\p{Regional_Indicator}{2}|\p{Extended_Pictographic})(?:️|‍\p{Extended_Pictographic}|[\u{1F3FB}-\u{1F3FF}])*)/u;
 const RTL = /[֐-ࣿיִ-﷿ﹰ-﻿]/;
-const STRONG = /[\p{L}]/u;
+const STRONG = /\p{L}/u;
 
 /** Splits a message into pieces small enough to skip when they are off screen. */
-function split(text: string): { text: string; emoji: boolean }[] {
-	const out: { text: string; emoji: boolean }[] = [];
+function split(text: string, dots: boolean): Pick<Piece, 'kind' | 'text'>[] {
+	const out: Pick<Piece, 'kind' | 'text'>[] = [];
 	for (const word of text.split(/(?<=\s)/)) {
 		for (const [i, part] of word.split(EMOJI).entries()) {
 			if (!part) continue;
 			if (i % 2 === 1) {
-				out.push({ text: part, emoji: true });
+				out.push({ kind: 'emoji', text: part });
 				continue;
 			}
-			// A very long unbroken run is cut up too, on whole characters.
 			const chars = Array.from(part);
-			for (let c = 0; c < chars.length; c += 24) {
-				out.push({ text: chars.slice(c, c + 24).join(''), emoji: false });
+			if (dots) {
+				// Runs the dot font can draw, separated from characters it has no glyph for.
+				let run = '';
+				let known = true;
+				for (const char of chars) {
+					const has = glyph(char) !== undefined;
+					if (run && has !== known) {
+						out.push({ kind: known ? 'dots' : 'text', text: run });
+						run = '';
+					}
+					known = has;
+					run += char;
+				}
+				if (run) out.push({ kind: known ? 'dots' : 'text', text: run });
+			} else {
+				// A very long unbroken run is cut up too, on whole characters.
+				for (let c = 0; c < chars.length; c += 24) {
+					out.push({ kind: 'text', text: chars.slice(c, c + 24).join('') });
+				}
 			}
 		}
 	}
 	return out;
+}
+
+/** Width of a run in the dot font: each glyph plus one empty column after it. */
+const dotsWidth = (text: string) =>
+	Array.from(text).reduce((width, char) => width + glyph(char)!.length + 1, 0);
+
+/** The number of dot rows for a text size, so the 7-row font fills the same share of the sign. */
+function rowsFor(scale: number) {
+	const rows = Math.round(GLYPH_HEIGHT / scale);
+	// Odd, so the font sits exactly in the middle.
+	return rows % 2 ? rows : rows + 1;
 }
 
 export class SignRenderer {
@@ -147,10 +195,15 @@ export class SignRenderer {
 	/** Shows a new item from the start, or a blank sign for null. */
 	set item(item: Item | null) {
 		this.#item = item;
-		this.#paths = (item?.drawing?.strokes ?? []).map((s) => ({
-			color: s.color,
-			path: new Path2D(s.d)
-		}));
+		this.#paths = (item?.drawing?.strokes ?? []).map(({ color, points }) => {
+			const path = new Path2D();
+			path.moveTo(points[0], points[1]);
+			// A single point still needs a segment for its round cap to show as a dot.
+			for (let i = 0; i < Math.max(points.length, 4); i += 2) {
+				path.lineTo(points[i] ?? points[0], points[i + 1] ?? points[1]);
+			}
+			return { color, path };
+		});
 		this.#layout = null;
 		this.#travelled = 0;
 		this.#held = 0;
@@ -160,23 +213,25 @@ export class SignRenderer {
 
 	// ---------------------------------------------------------------- layout
 
-	/** Measures the item for a given content height. All positions are in that canvas's pixels. */
-	#measure(ctx: CanvasRenderingContext2D, contentHeight: number, weight: number): Layout {
+	/** Measures the item. All positions are in the mode's layout units. */
+	#measure(ctx: CanvasRenderingContext2D, mode: Mode): Layout {
 		const item = this.#item!;
-		const key = `${contentHeight}|${weight}`;
+		const key = [mode.textHeight, mode.drawingHeight, mode.weight, mode.dots].join();
 		if (this.#layout?.key === key) return this.#layout;
 
 		if (item.drawing) {
-			const width = (contentHeight * DRAWING.width) / DRAWING.height;
+			const width = (mode.drawingHeight * item.drawing.width) / DRAWING.height;
 			return (this.#layout = { key, pieces: [], width, rtl: false });
 		}
 
-		ctx.font = `${weight} ${contentHeight}px ${FONT}`;
-		const firstStrong = item.text.match(STRONG)?.[0] ?? '';
-		const rtl = RTL.test(firstStrong);
+		ctx.font = `${mode.weight} ${mode.textHeight}px ${FONT}`;
+		const rtl = RTL.test(item.text.match(STRONG)?.[0] ?? '');
 		let width = 0;
-		const pieces = split(item.text).map((piece) => {
-			const w = ctx.measureText(piece.text).width;
+		const pieces = split(item.text, mode.dots).map((piece) => {
+			const w =
+				piece.kind === 'dots'
+					? dotsWidth(piece.text)
+					: Math.ceil(ctx.measureText(piece.text).width / mode.snap) * mode.snap;
 			const placed = { ...piece, x: width, width: w };
 			width += w;
 			return placed;
@@ -186,10 +241,7 @@ export class SignRenderer {
 		return (this.#layout = { key, pieces, width, rtl });
 	}
 
-	/**
-	 * Where the content's left edge is, in view widths scaled to `viewWidth`, after `dt` ms.
-	 * Also tracks whether the item has finished its pass.
-	 */
+	/** Where the content's left edge is after `dt` more milliseconds, in layout units. */
 	#position(layout: Layout, viewWidth: number, dt: number): number {
 		const fits = layout.width <= viewWidth;
 		if (this.#scrolls !== !fits) {
@@ -224,27 +276,18 @@ export class SignRenderer {
 
 	// --------------------------------------------------------------- painting
 
-	/** Fills with a paint; an HDR paint punches through to the video behind the canvas. */
+	/** Selects a paint; an HDR paint punches through to the video behind the canvas. */
 	#use(ctx: CanvasRenderingContext2D, paint: Paint) {
 		ctx.globalCompositeOperation = paint === HDR ? 'destination-out' : 'source-over';
 		ctx.fillStyle = ctx.strokeStyle = paint === HDR ? '#000' : paint;
 	}
 
-	/** Paints the item with its left edge at `x`, vertically centred in a band `bandHeight` tall. */
-	#paintItem(
-		ctx: CanvasRenderingContext2D,
-		layout: Layout,
-		x: number,
-		viewWidth: number,
-		bandHeight: number,
-		contentHeight: number,
-		weight: number,
-		ink: Paint
-	) {
+	/** Paints the item with its left edge at `x`, vertically centred in the mode's band. */
+	#paintItem(ctx: CanvasRenderingContext2D, layout: Layout, x: number, mode: Mode, ink: Paint) {
 		if (this.#item?.drawing) {
-			const k = contentHeight / DRAWING.height;
+			const k = mode.drawingHeight / DRAWING.height;
 			ctx.save();
-			ctx.translate(x, (bandHeight - contentHeight) / 2);
+			ctx.translate(x, (mode.bandHeight - mode.drawingHeight) / 2);
 			ctx.scale(k, k);
 			ctx.lineWidth = DRAWING.brush;
 			ctx.lineCap = ctx.lineJoin = 'round';
@@ -256,17 +299,32 @@ export class SignRenderer {
 			return;
 		}
 
-		ctx.font = `${weight} ${contentHeight}px ${FONT}`;
+		ctx.font = `${mode.weight} ${mode.textHeight}px ${FONT}`;
 		ctx.textBaseline = 'middle';
 		ctx.textAlign = 'left';
 		ctx.direction = layout.rtl ? 'rtl' : 'ltr';
-		const y = bandHeight / 2 + contentHeight * 0.04;
+		const middle = mode.bandHeight / 2 + mode.textHeight * 0.04;
+		const top = (mode.bandHeight - GLYPH_HEIGHT) / 2;
 		for (const piece of layout.pieces) {
 			const left = x + piece.x;
-			if (left > viewWidth || left + piece.width < 0) continue;
-			// Emoji keep their own colors; only the letters take the ink.
-			this.#use(ctx, piece.emoji ? '#fff' : ink);
-			ctx.fillText(piece.text, left, y);
+			if (left > mode.viewWidth || left + piece.width < 0) continue;
+			if (piece.kind === 'dots') {
+				this.#use(ctx, ink);
+				let column = left;
+				for (const char of piece.text) {
+					for (const bits of glyph(char)!) {
+						for (let row = 0; row < GLYPH_HEIGHT; row++) {
+							if ((bits >> row) & 1) ctx.fillRect(column, top + row, 1, 1);
+						}
+						column++;
+					}
+					column++;
+				}
+			} else {
+				// Emoji keep their own colors; only the letters take the ink.
+				this.#use(ctx, piece.kind === 'emoji' ? '#fff' : ink);
+				ctx.fillText(piece.text, left, middle);
+			}
 		}
 		ctx.globalCompositeOperation = 'source-over';
 	}
@@ -297,39 +355,58 @@ export class SignRenderer {
 		const innerHeight = height - margin * 2;
 		const chase = s.frame === 'bulbs' ? Math.floor((time / 1000) * CHASE_HZ) % 3 : 0;
 
-		const lowRes = s.look !== 'smooth';
-		const cell = innerHeight / ROWS;
-		const columns = Math.ceil(innerWidth / cell);
-		const viewWidth = lowRes ? columns : innerWidth;
-		const bandHeight = lowRes ? ROWS : innerHeight;
-		const contentHeight = Math.round(bandHeight * s.scale);
-		const weight = lowRes ? 700 : 900;
+		// In the LED and ASCII looks the message is laid out on a coarse grid of font dots.
+		// An ASCII character is half as wide as it is tall, so there each dot is two cells wide.
+		const grid = s.look !== 'smooth';
+		const rows = rowsFor(s.scale);
+		const cellHeight = innerHeight / rows;
+		const perDot = s.look === 'ascii' ? 2 : 1;
+		const cellWidth = cellHeight / perDot;
+		const columns = Math.ceil(innerWidth / cellWidth);
+		const mode: Mode = grid
+			? {
+					viewWidth: columns / perDot,
+					bandHeight: rows,
+					textHeight: GLYPH_HEIGHT + 1,
+					drawingHeight: rows,
+					weight: 700,
+					dots: true,
+					snap: 1 / perDot
+				}
+			: {
+					viewWidth: innerWidth,
+					bandHeight: innerHeight,
+					textHeight: Math.round(innerHeight * s.scale),
+					drawingHeight: Math.round(innerHeight * s.scale),
+					weight: 900,
+					dots: false,
+					snap: 1 / 64
+				};
 
 		let x = 0;
 		let layout: Layout | null = null;
 		if (this.#item) {
-			layout = this.#measure(lowRes ? this.#gridCtx : ctx, contentHeight, weight);
-			x = this.#position(layout, viewWidth, dt);
-			if (lowRes) x = Math.round(x);
+			layout = this.#measure(grid ? this.#gridCtx : ctx, mode);
+			x = this.#position(layout, mode.viewWidth, dt);
+			if (grid) x = Math.round(x / mode.snap) * mode.snap;
 		}
 
 		// Skip the work when nothing visible has changed since the last frame.
-		const moving = !lowRes && show && this.#scrolls && !this.#still && !this.#ended;
+		const moving = !grid && show && this.#scrolls && !this.#still && !this.#ended;
 		const key = [x, show, flood, ink, ground, chase, width, height].join();
 		if (!moving && key === this.#lastKey) return;
 		this.#lastKey = key;
 
 		ctx.globalAlpha = 1;
+		ctx.globalCompositeOperation = 'source-over';
+		ctx.clearRect(0, 0, width, height);
 		if (flood) {
-			ctx.clearRect(0, 0, width, height);
 			if (ink !== HDR) {
-				this.#use(ctx, ink);
+				ctx.fillStyle = ink;
 				ctx.fillRect(0, 0, width, height);
 			}
 			return;
 		}
-		ctx.globalCompositeOperation = 'source-over';
-		ctx.clearRect(0, 0, width, height);
 		if (ground !== HDR) {
 			ctx.fillStyle = ground;
 			ctx.fillRect(0, 0, width, height);
@@ -342,67 +419,83 @@ export class SignRenderer {
 		ctx.rect(margin, margin, innerWidth, innerHeight);
 		ctx.clip();
 		ctx.translate(margin, margin);
-		if (!lowRes) {
-			if (show && layout) {
-				this.#paintItem(ctx, layout, x, viewWidth, bandHeight, contentHeight, weight, ink);
-			}
-		} else {
-			this.#paintDots(ctx, show ? layout : null, x, columns, cell, contentHeight, weight, ink);
+		if (grid) {
+			this.#paintGrid(ctx, show ? layout : null, x, mode, columns, rows, cellWidth, cellHeight, ink);
+		} else if (show && layout) {
+			this.#paintItem(ctx, layout, x, mode, ink);
 		}
 		ctx.restore();
 		ctx.globalCompositeOperation = 'source-over';
 		ctx.globalAlpha = 1;
 	}
 
-	/** LED and pixel looks: draw the message tiny, then redraw each of its pixels as a dot or square. */
-	#paintDots(
+	/**
+	 * LED and ASCII looks: draw the message at one pixel per cell on a hidden canvas,
+	 * then redraw each lit cell as a round dot or a '#'.
+	 */
+	#paintGrid(
 		ctx: CanvasRenderingContext2D,
 		layout: Layout | null,
 		x: number,
+		mode: Mode,
 		columns: number,
-		cell: number,
-		contentHeight: number,
-		weight: number,
+		rows: number,
+		cellWidth: number,
+		cellHeight: number,
 		ink: Paint
 	) {
 		const grid = this.#gridCtx;
-		if (this.#grid.width !== columns || this.#grid.height !== ROWS) {
+		if (this.#grid.width !== columns || this.#grid.height !== rows) {
 			this.#grid.width = columns;
-			this.#grid.height = ROWS;
+			this.#grid.height = rows;
 		}
+		grid.setTransform(1, 0, 0, 1, 0, 0);
 		grid.globalCompositeOperation = 'source-over';
-		grid.clearRect(0, 0, columns, ROWS);
-		// Letters are drawn pure white, which is how they are told apart from emoji below.
-		if (layout) this.#paintItem(grid, layout, x, columns, ROWS, contentHeight, weight, '#fff');
-		const data = grid.getImageData(0, 0, columns, ROWS).data;
+		grid.clearRect(0, 0, columns, rows);
+		if (layout) {
+			// Letters are drawn pure white, which is how they are told apart from emoji below.
+			grid.scale(1 / mode.snap, 1);
+			this.#paintItem(grid, layout, x, mode, '#fff');
+		}
+		const data = grid.getImageData(0, 0, columns, rows).data;
 
 		const led = this.#settings.look === 'led';
-		const radius = cell * 0.42;
 		const lit = new Path2D();
 		const unlit = new Path2D();
+		const hashes: [number, number, string | null][] = [];
+		const colored: [number, number, string][] = [];
+		const radius = cellHeight * 0.42;
 		const dot = (path: Path2D, column: number, row: number) => {
-			if (led) {
-				const cx = (column + 0.5) * cell;
-				path.moveTo(cx + radius, (row + 0.5) * cell);
-				path.arc(cx, (row + 0.5) * cell, radius, 0, Math.PI * 2);
-			} else {
-				// Squares overlap by a hair so no seams show between them.
-				path.rect(column * cell, row * cell, cell + 0.5, cell + 0.5);
-			}
+			const cx = (column + 0.5) * cellWidth;
+			const cy = (row + 0.5) * cellHeight;
+			path.moveTo(cx + radius, cy);
+			path.arc(cx, cy, radius, 0, Math.PI * 2);
 		};
 
-		const colored: [number, number, string][] = [];
-		for (let row = 0; row < ROWS; row++) {
+		for (let row = 0; row < rows; row++) {
 			for (let column = 0; column < columns; column++) {
 				const i = (row * columns + column) * 4;
-				if (data[i + 3] < 110) {
-					if (led) dot(unlit, column, row);
-				} else if (data[i] > 240 && data[i + 1] > 240 && data[i + 2] > 240) {
-					dot(lit, column, row);
-				} else {
-					colored.push([column, row, `rgb(${data[i]} ${data[i + 1]} ${data[i + 2]})`]);
-				}
+				const on = data[i + 3] >= 110;
+				const white = data[i] > 240 && data[i + 1] > 240 && data[i + 2] > 240;
+				const color = on && !white ? `rgb(${data[i]} ${data[i + 1]} ${data[i + 2]})` : null;
+				if (!led) {
+					if (on) hashes.push([column, row, color]);
+				} else if (!on) dot(unlit, column, row);
+				else if (color) colored.push([column, row, color]);
+				else dot(lit, column, row);
 			}
+		}
+
+		if (!led) {
+			// Sized so one character is as wide as a cell, like text in a terminal.
+			ctx.font = `700 ${cellWidth / 0.6}px ${MONO}`;
+			ctx.textBaseline = 'middle';
+			ctx.textAlign = 'center';
+			for (const [column, row, color] of hashes) {
+				this.#use(ctx, color ?? ink);
+				ctx.fillText('#', (column + 0.5) * cellWidth, (row + 0.5) * cellHeight);
+			}
+			return;
 		}
 
 		// Unlit LEDs glow faintly, as on a real sign.
@@ -434,9 +527,8 @@ export class SignRenderer {
 		if (frame === 'none') return;
 
 		if (frame === 'line') {
-			const thickness = margin * 0.4;
 			this.#use(ctx, ink);
-			ctx.lineWidth = thickness;
+			ctx.lineWidth = margin * 0.4;
 			ctx.strokeRect(margin / 2, margin / 2, width - margin, height - margin);
 			return;
 		}
