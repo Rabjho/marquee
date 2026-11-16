@@ -56,6 +56,12 @@ node scripts/icon.svg.mjs > static/favicon.svg
 magick -background black -density 300 static/favicon.svg -resize 512x512 static/icon-512.png
 ```
 
+## To do
+
+- Rework how the playlist and drawings fit into the editing screen. Both work, but the
+  setup is not right yet: the text box doubles as "the selected playlist card", and
+  drawings sit in the same list while behaving differently.
+
 ## HDR assets
 
 Extra-bright mode shows the message as holes in a black canvas laid over an HDR white

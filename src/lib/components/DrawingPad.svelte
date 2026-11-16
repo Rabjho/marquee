@@ -1,6 +1,6 @@
 <script lang="ts">
 	// Finger drawing with the bare minimum: one brush, a few inks, undo and clear.
-	// The drawing is a long strip. The pad shows one stretch of it, and the arrows move along.
+	// The drawing is a long strip. The pad shows one stretch of it; two fingers drag it along.
 	import { onMount } from 'svelte';
 	import { pathData, trimmed, type Drawing, type Stroke } from '../drawing';
 	import { COLORS, DRAWING, INKS } from '../presets';
@@ -16,8 +16,8 @@
 		oncancel: () => void;
 	} = $props();
 
-	/** How far one tap on an arrow moves along the strip. */
-	const STEP = DRAWING.view / 2;
+	/** How far one press of an arrow key moves along the strip. */
+	const STEP = DRAWING.view / 4;
 
 	// svelte-ignore state_referenced_locally
 	let strokes = $state<Stroke[]>(drawing ? $state.snapshot(drawing.strokes) : []);
@@ -27,6 +27,10 @@
 	/** Left edge of the stretch shown in the pad. */
 	let offset = $state(0);
 	let canvas: SVGSVGElement;
+	/** Fingers on the pad right now, and where each one is across the screen. */
+	const fingers = new Map<number, number>();
+	/** Two fingers move the strip; it stays that way until every finger has lifted. */
+	let panning = false;
 
 	const sign = $derived(COLORS.find((c) => c.id === store.color) ?? COLORS[0]);
 	const ink = $derived(INKS.find((i) => i.id === inkId) ?? INKS[0]);
@@ -45,18 +49,47 @@
 		return [Math.round((offset + x) * 10) / 10, Math.round(y * 10) / 10];
 	}
 
+	function pan(units: number) {
+		offset = Math.min(Math.max(offset + units, 0), DRAWING.maxWidth - DRAWING.view);
+	}
+
+	const middle = () => [...fingers.values()].reduce((sum, x) => sum + x, 0) / fingers.size;
+
 	function start(event: PointerEvent) {
 		canvas.setPointerCapture(event.pointerId);
-		current = { color: ink.value, points: point(event) };
+		fingers.set(event.pointerId, event.clientX);
+		if (fingers.size === 1) {
+			current = { color: ink.value, points: point(event) };
+		} else {
+			// A second finger means dragging, so the mark the first one began is dropped.
+			current = null;
+			panning = true;
+		}
 	}
 
 	function move(event: PointerEvent) {
-		current?.points.push(...point(event));
+		if (!fingers.has(event.pointerId)) return;
+		if (!panning) {
+			current?.points.push(...point(event));
+			return;
+		}
+		const before = middle();
+		fingers.set(event.pointerId, event.clientX);
+		pan(((before - middle()) / canvas.getBoundingClientRect().width) * DRAWING.view);
 	}
 
-	function end() {
-		if (current) strokes.push(current);
+	function end(event: PointerEvent) {
+		fingers.delete(event.pointerId);
+		if (fingers.size > 0) return;
+		if (current && !panning) strokes.push(current);
 		current = null;
+		panning = false;
+	}
+
+	/** Arrow keys move the strip too, for when there is no touch screen. */
+	function key(event: KeyboardEvent) {
+		if (event.key === 'ArrowRight') pan(STEP);
+		else if (event.key === 'ArrowLeft') pan(-STEP);
 	}
 
 	onMount(() => canvas.focus());
@@ -76,9 +109,11 @@
 	<div class="mx-auto flex w-full max-w-md flex-col gap-4 px-4 pt-4 pb-12">
 		<h2 id="draw-title" class="font-semibold text-fg-muted">Draw with your finger</h2>
 
+		<!-- The canvas is a drawing surface, so it takes pointer and key input by design. -->
+		<!-- svelte-ignore a11y_no_noninteractive_tabindex, a11y_no_noninteractive_element_interactions -->
 		<svg
 			bind:this={canvas}
-			class="aspect-3/2 w-full cursor-crosshair touch-none rounded-lg border border-line-strong outline-none"
+			class="aspect-3/2 w-full cursor-crosshair touch-none rounded-lg border border-line-strong"
 			viewBox="{offset} 0 {DRAWING.view} {DRAWING.height}"
 			style:background-color={sign.bg}
 			style:color={sign.fg}
@@ -86,9 +121,10 @@
 			stroke-width={DRAWING.brush}
 			stroke-linecap="round"
 			stroke-linejoin="round"
-			role="img"
+			role="application"
 			aria-label="Drawing canvas"
-			tabindex="-1"
+			tabindex="0"
+			onkeydown={key}
 			onpointerdown={start}
 			onpointermove={move}
 			onpointerup={end}
@@ -126,22 +162,7 @@
 					stroke-linecap="butt"
 				/>
 			</svg>
-			<div class="grid grid-cols-2 gap-2">
-				<button
-					class={secondary}
-					disabled={offset === 0}
-					onclick={() => (offset = Math.max(offset - STEP, 0))}
-				>
-					← Back
-				</button>
-				<button
-					class={secondary}
-					disabled={offset + DRAWING.view >= DRAWING.maxWidth}
-					onclick={() => (offset += STEP)}
-				>
-					More room →
-				</button>
-			</div>
+			<p class="text-fg-muted">Drag with two fingers for more room.</p>
 		</div>
 
 		<fieldset>
