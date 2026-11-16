@@ -1,9 +1,10 @@
 <script lang="ts">
 	// The sign surface at any size: used full screen by Stage and in miniature by Preview.
-	// Everything is relative to the given width and height, so the miniature is faithful.
-	import { COLORS, SIZES, SPEEDS } from '../presets';
+	// The drawing itself is done by SignRenderer; this component feeds it the settings.
+	import { onMount } from 'svelte';
+	import { COLORS, SIZES } from '../presets';
+	import { SignRenderer, type Settings } from '../renderer';
 	import { store, type Item } from '../store.svelte';
-	import DrawingView from './DrawingView.svelte';
 
 	let {
 		item,
@@ -29,70 +30,79 @@
 		scrolls?: boolean;
 	} = $props();
 
-	/** How long a message that fits without scrolling stays up before `onend`. */
-	const HOLD_MS = 3000;
-
-	let contentEl = $state<HTMLElement>();
+	let canvas: HTMLCanvasElement;
+	let renderer = $state.raw<SignRenderer>();
+	let video = $state<HTMLVideoElement>();
+	let videoFailed = $state(false);
 
 	const color = $derived(COLORS.find((c) => c.id === store.color) ?? COLORS[0]);
-	const speed = $derived(SPEEDS.find((s) => s.id === store.speed) ?? SPEEDS[1]);
-	const size = $derived(SIZES.find((s) => s.id === store.size) ?? SIZES[0]);
+	const settings = $derived<Settings>({
+		fg: color.fg,
+		bg: color.bg,
+		scale: (SIZES.find((s) => s.id === store.size) ?? SIZES[0]).scale,
+		speed: store.speed,
+		leftward: store.direction === 'left',
+		look: store.look,
+		frame: store.frame,
+		hdr: store.hdr,
+		blink: store.blink,
+		blinkRate: store.blinkRate
+	});
 
-	// Position the message: centred if it fits, otherwise scrolling across.
+	onMount(() => {
+		const created = new SignRenderer(canvas, settings);
+		created.onend = () => onend?.();
+		created.onscrolls = (value) => (scrolls = value);
+		created.start();
+		renderer = created;
+		return () => created.stop();
+	});
+
 	$effect(() => {
-		const el = contentEl;
-		if (!el) return;
-		void item?.text;
-		void item?.drawing;
-		void height;
-		void size;
-		const textWidth = el.offsetWidth;
-		const fits = textWidth <= width;
-		scrolls = !fits;
-		el.style.transform = fits ? `translateX(${(width - textWidth) / 2}px)` : '';
+		if (renderer) renderer.settings = settings;
+	});
+	$effect(() => {
+		if (renderer) renderer.item = item;
+	});
+	$effect(() => {
+		const ratio = Math.min(devicePixelRatio, 3);
+		renderer?.resize(Math.round(width * ratio), Math.round(height * ratio));
+	});
+	$effect(() => {
+		if (!renderer) return;
+		renderer.blinking = blinking;
+		renderer.loop = loop;
+		renderer.still = still;
+	});
 
-		if (fits || still) {
-			if (loop) return;
-			const hold = setTimeout(() => onend?.(), HOLD_MS);
-			return () => clearTimeout(hold);
-		}
-
-		const leftward = store.direction === 'left';
-		const scroll = el.animate(
-			[
-				{ transform: `translateX(${leftward ? width : -textWidth}px)` },
-				{ transform: `translateX(${leftward ? -textWidth : width}px)` }
-			],
-			{
-				duration: ((width + textWidth) / (speed.screensPerSecond * width)) * 1000,
-				iterations: loop ? Infinity : 1,
-				fill: 'both'
-			}
-		);
-		scroll.onfinish = () => onend?.();
-		return () => scroll.cancel();
+	// The HDR video only brightens the screen while it is actually playing. If it cannot
+	// play (unsupported, or autoplay blocked by Low Power Mode) the HDR image stays in its place.
+	$effect(() => {
+		video?.play().catch(() => (videoFailed = true));
 	});
 </script>
 
 <span
-	class="relative block overflow-hidden {blinking ? `sign-blink-${store.blink}` : ''}"
+	class="relative block overflow-hidden"
 	style:width="{width}px"
 	style:height="{height}px"
-	style:--sign-fg={color.fg}
-	style:--sign-bg={color.bg}
-	style:background-color={color.bg}
-	style:color={color.fg}
+	style:background-color={store.hdr ? '#000' : color.bg}
 >
-	{#if item}
-		{@const contentHeight = height * size.scale}
-		<span
-			bind:this={contentEl}
-			class="sign-text absolute left-0 block font-black whitespace-pre will-change-transform"
-			style:top="{item.drawing ? (height - contentHeight) / 2 : 0}px"
-			style:font-size="{contentHeight}px"
-			style:line-height="{height}px"
-			dir="auto"
-			>{#if item.drawing}<DrawingView drawing={item.drawing} height={contentHeight} />{:else}{item.text}{/if}</span
-		>
+	{#if store.hdr}
+		<img class="hdr-source absolute inset-0 size-full" src="/hdr-white.avif" alt="" />
+		{#if !videoFailed}
+			<video
+				bind:this={video}
+				class="hdr-source absolute inset-0 size-full object-fill"
+				src="/hdr-white.mp4"
+				muted
+				loop
+				playsinline
+				autoplay
+				disablepictureinpicture
+				onerror={() => (videoFailed = true)}
+			></video>
+		{/if}
 	{/if}
+	<canvas bind:this={canvas} class="absolute inset-0 size-full"></canvas>
 </span>

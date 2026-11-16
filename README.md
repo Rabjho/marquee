@@ -26,13 +26,14 @@ against a deployed build.
 | --- | --- |
 | `src/routes/+page.svelte` | The editing screen: text box, Go, stickers, playlist, style presets |
 | `src/lib/components/Stage.svelte` | The playing screen: full screen, rotation, tap to stop |
-| `src/lib/components/Sign.svelte` | The sign surface itself, shared by the stage and the preview |
+| `src/lib/components/Sign.svelte` | The sign surface, shared by the stage and the preview |
+| `src/lib/renderer.ts` | Draws the sign on a canvas: scrolling, looks, frames, blinking, HDR |
 | `src/lib/components/Preview.svelte` | The miniature sign next to the style options |
 | `src/lib/components/DrawingPad.svelte` | Finger drawing: one brush, a few inks, undo, clear |
 | `src/lib/components/DrawingView.svelte` | Renders a stored drawing at any size |
 | `src/lib/store.svelte.ts` | Messages and settings, saved to `localStorage` |
 | `src/lib/shake.svelte.ts` | Shake detection and the iOS motion permission |
-| `src/lib/presets.ts` | Speeds, colors, blink styles, stickers |
+| `src/lib/presets.ts` | Sizes, looks, frames, colors, blink styles, slider ranges, stickers |
 | `src/service-worker.ts` | Precaches the app for offline use |
 | `src/routes/layout.css` | Design tokens and blink animations |
 | `scripts/icon.svg.mjs` | Source of the app icon |
@@ -51,4 +52,21 @@ In Cloudflare Workers Builds, connected to the GitHub mirror: build command
 ```sh
 node scripts/icon.svg.mjs > static/favicon.svg
 magick -background black -density 300 static/favicon.svg -resize 512x512 static/icon-512.png
+```
+
+## HDR assets
+
+Extra-bright mode shows the message as holes in a black canvas laid over an HDR white
+video (`static/hdr-white.mp4`, HEVC HLG), with an HDR image (`static/hdr-white.avif`, PQ)
+behind it for when the video cannot play. Both were made with ffmpeg:
+
+```sh
+ffmpeg -f lavfi -i "color=c=white:s=64x64:r=1:d=600" -vf format=yuv420p10le \
+  -c:v libx265 -crf 30 -x265-params "colorprim=bt2020:transfer=arib-std-b67:colormatrix=bt2020nc:range=limited:keyint=600" \
+  -color_primaries bt2020 -color_trc arib-std-b67 -colorspace bt2020nc -color_range tv \
+  -tag:v hvc1 -movflags +faststart -an static/hdr-white.mp4
+
+ffmpeg -f lavfi -i "color=c=white:s=64x64" -frames:v 1 \
+  -vf "format=yuv444p10le,setparams=color_primaries=bt2020:color_trc=smpte2084:colorspace=bt2020nc:range=pc" \
+  -c:v libaom-av1 -still-picture 1 -crf 10 static/hdr-white.avif
 ```

@@ -1,15 +1,19 @@
 import {
+	BLINK_RATE,
 	BLINKS,
 	COLORS,
 	DIRECTIONS,
+	FRAMES,
 	INKS,
+	LOOKS,
 	SIZES,
-	SPEEDS,
+	SPEED,
 	type BlinkId,
 	type ColorId,
 	type DirectionId,
-	type SizeId,
-	type SpeedId
+	type FrameId,
+	type LookId,
+	type SizeId
 } from './presets';
 
 export type Stroke = { color: string | null; d: string };
@@ -23,10 +27,14 @@ type Saved = {
 	cards: Card[];
 	selectedId: string;
 	size: SizeId;
-	speed: SpeedId;
+	look: LookId;
+	frame: FrameId;
 	color: ColorId;
-	blink: BlinkId;
+	hdr: boolean;
+	speed: number;
 	direction: DirectionId;
+	blink: BlinkId;
+	blinkRate: number;
 };
 
 const KEY = 'marquee:v1';
@@ -51,6 +59,15 @@ function loadDrawing(raw: unknown): Drawing | undefined {
 	return valid.length ? { strokes: valid } : undefined;
 }
 
+/** A saved number, kept inside its slider's range. */
+const within = (range: { min: number; max: number; initial: number }, value: unknown) =>
+	typeof value === 'number' && Number.isFinite(value)
+		? Math.min(Math.max(value, range.min), range.max)
+		: range.initial;
+
+/** Speed used to be one of three named presets. */
+const LEGACY_SPEED: Record<string, number> = { slow: 0.3, medium: 0.55, fast: 0.95 };
+
 function load(): Saved {
 	let raw: Partial<Saved> = {};
 	try {
@@ -68,10 +85,14 @@ function load(): Saved {
 		cards,
 		selectedId: selected.id,
 		size: oneOf(SIZES, raw.size, 'big'),
-		speed: oneOf(SPEEDS, raw.speed, 'medium'),
+		look: oneOf(LOOKS, raw.look, 'smooth'),
+		frame: oneOf(FRAMES, raw.frame, 'none'),
 		color: oneOf(COLORS, raw.color, 'white'),
+		hdr: raw.hdr === true,
+		speed: within(SPEED, LEGACY_SPEED[raw.speed as unknown as string] ?? raw.speed),
+		direction: oneOf(DIRECTIONS, raw.direction, 'left'),
 		blink: oneOf(BLINKS, raw.blink, 'flash'),
-		direction: oneOf(DIRECTIONS, raw.direction, 'left')
+		blinkRate: within(BLINK_RATE, raw.blinkRate)
 	};
 }
 
@@ -84,10 +105,14 @@ class Store {
 	cards = $state<Card[]>([]);
 	selectedId = $state('');
 	size = $state<SizeId>('big');
-	speed = $state<SpeedId>('medium');
+	look = $state<LookId>('smooth');
+	frame = $state<FrameId>('none');
 	color = $state<ColorId>('white');
-	blink = $state<BlinkId>('flash');
+	hdr = $state(false);
+	speed = $state<number>(SPEED.initial);
 	direction = $state<DirectionId>('left');
+	blink = $state<BlinkId>('flash');
+	blinkRate = $state<number>(BLINK_RATE.initial);
 
 	constructor() {
 		Object.assign(this, load());
@@ -153,10 +178,14 @@ class Store {
 			cards: this.cards,
 			selectedId: this.selectedId,
 			size: this.size,
-			speed: this.speed,
+			look: this.look,
+			frame: this.frame,
 			color: this.color,
+			hdr: this.hdr,
+			speed: this.speed,
+			direction: this.direction,
 			blink: this.blink,
-			direction: this.direction
+			blinkRate: this.blinkRate
 		};
 		try {
 			localStorage.setItem(KEY, JSON.stringify(saved));

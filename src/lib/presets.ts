@@ -1,16 +1,31 @@
 // Every control is a short list of presets. No sliders, no pickers.
 
-export const SPEEDS = [
-	{ id: 'slow', label: 'Slow', screensPerSecond: 0.3 },
-	{ id: 'medium', label: 'Medium', screensPerSecond: 0.55 },
-	{ id: 'fast', label: 'Fast', screensPerSecond: 0.95 }
-] as const;
+/** Scroll speed in sign widths per second. */
+export const SPEED = { min: 0.1, max: 1.6, step: 0.05, initial: 0.55 } as const;
+
+/**
+ * Blinks per second. The ceiling is 3 on purpose: faster full-screen flashing is a
+ * seizure risk (WCAG 2.3.1).
+ */
+export const BLINK_RATE = { min: 0.5, max: 3, step: 0.25, initial: 3 } as const;
 
 /** Text height as a share of the screen height. Smaller text fits more words on screen at once. */
 export const SIZES = [
 	{ id: 'big', label: 'Big', scale: 0.9 },
 	{ id: 'medium', label: 'Medium', scale: 0.55 },
 	{ id: 'small', label: 'Small', scale: 0.32 }
+] as const;
+
+export const LOOKS = [
+	{ id: 'smooth', label: 'Smooth' },
+	{ id: 'led', label: 'LED' },
+	{ id: 'pixel', label: 'Pixel' }
+] as const;
+
+export const FRAMES = [
+	{ id: 'none', label: 'None' },
+	{ id: 'line', label: 'Line' },
+	{ id: 'bulbs', label: 'Bulbs' }
 ] as const;
 
 export const COLORS = [
@@ -52,7 +67,8 @@ export const INKS = [
 	{ id: 'cyan', label: 'Cyan', value: '#00e5ff' }
 ] as const;
 
-export type SpeedId = (typeof SPEEDS)[number]['id'];
+export type LookId = (typeof LOOKS)[number]['id'];
+export type FrameId = (typeof FRAMES)[number]['id'];
 export type SizeId = (typeof SIZES)[number]['id'];
 export type ColorId = (typeof COLORS)[number]['id'];
 export type BlinkId = (typeof BLINKS)[number]['id'];

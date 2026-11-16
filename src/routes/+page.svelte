@@ -4,8 +4,20 @@
 	import DrawingPad from '../lib/components/DrawingPad.svelte';
 	import DrawingView from '../lib/components/DrawingView.svelte';
 	import Preview from '../lib/components/Preview.svelte';
+	import Slider from '../lib/components/Slider.svelte';
 	import Stage from '../lib/components/Stage.svelte';
-	import { BLINK_MS, BLINKS, COLORS, DIRECTIONS, SIZES, SPEEDS, STICKERS } from '../lib/presets';
+	import {
+		BLINK_MS,
+		BLINK_RATE,
+		BLINKS,
+		COLORS,
+		DIRECTIONS,
+		FRAMES,
+		LOOKS,
+		SIZES,
+		SPEED,
+		STICKERS
+	} from '../lib/presets';
 	import { shake } from '../lib/shake.svelte';
 	import { clean, hasContent, store, type Card, type Drawing, type Item } from '../lib/store.svelte';
 
@@ -283,9 +295,10 @@
 			</div>
 		{/if}
 		<Choice legend="Text size" name="size" options={SIZES} bind:value={store.size} />
-		<Choice legend="Speed" name="speed" options={SPEEDS} bind:value={store.speed} />
+		<Choice legend="Look" name="look" options={LOOKS} bind:value={store.look} />
+		<Choice legend="Frame" name="frame" options={FRAMES} bind:value={store.frame} />
 
-		<fieldset>
+		<fieldset disabled={store.hdr} class="disabled:opacity-40">
 			<legend class="mb-2 font-semibold text-fg-muted">Color</legend>
 			<div class="grid grid-cols-4 gap-2">
 				{#each COLORS as color (color.id)}
@@ -294,7 +307,13 @@
 						style:background-color={color.bg}
 						style:color={color.fg}
 					>
-						<input class="absolute inset-0 cursor-pointer opacity-0" type="radio" name="color" value={color.id} bind:group={store.color} />
+						<input
+							class="absolute inset-0 cursor-pointer opacity-0"
+							type="radio"
+							name="color"
+							value={color.id}
+							bind:group={store.color}
+						/>
 						<span aria-hidden="true">{store.color === color.id ? '✓' : 'Aa'}</span>
 						<span class="sr-only">{color.label}</span>
 					</label>
@@ -302,8 +321,45 @@
 			</div>
 		</fieldset>
 
+		<Choice
+			legend="Extra bright"
+			name="hdr"
+			options={[
+				{ id: 'off', label: 'Off' },
+				{
+					id: 'on',
+					label: 'On',
+					hint: 'Brighter than normal white, on screens that can do it. The message turns white. Turn your screen brightness all the way up. Uses more battery.'
+				}
+			]}
+			bind:value={() => (store.hdr ? 'on' : 'off'), (value) => (store.hdr = value === 'on')}
+		/>
+
+		<Slider
+			legend="Scroll speed"
+			name="speed"
+			{...SPEED}
+			low="Slow"
+			high="Fast"
+			bind:value={store.speed}
+		/>
+		<Choice
+			legend="Scroll direction"
+			name="direction"
+			options={DIRECTIONS}
+			bind:value={store.direction}
+		/>
+
 		<Choice legend="Blink" name="blink" options={BLINKS} bind:value={store.blink} onpick={demoBlink} />
-		<Choice legend="Scroll" name="direction" options={DIRECTIONS} bind:value={store.direction} />
+		<Slider
+			legend="Blink speed"
+			name="blink-rate"
+			{...BLINK_RATE}
+			low="Slow"
+			high="Fast"
+			bind:value={store.blinkRate}
+			oninput={demoBlink}
+		/>
 	</section>
 
 	<footer class="flex flex-col gap-4">

@@ -46,50 +46,45 @@ body {
 	outline-offset: 2px;
 }
 
-/*
- * Blink styles for the sign. All of them stay at 3 flashes per second or slower
- * (WCAG 2.3.1), since this is a full-screen, high-contrast flash.
- */
-@keyframes sign-flash {
-	0%,
-	49.9% {
-		opacity: 1;
-	}
-	50%,
-	100% {
-		opacity: 0;
-	}
+/* Lets the HDR white behind the sign use the screen's full brightness. */
+.hdr-source {
+	dynamic-range-limit: no-limit;
 }
-@keyframes sign-strobe {
-	0%,
-	19.9% {
-		background-color: var(--sign-fg);
-		color: var(--sign-fg);
-	}
-	20%,
-	100% {
-		background-color: var(--sign-bg);
-		color: var(--sign-fg);
-	}
+
+/* A slider with a thumb big enough to grab without looking. */
+.slider {
+	appearance: none;
+	display: block;
+	width: 100%;
+	height: 3rem;
+	background: transparent;
+	cursor: pointer;
 }
-@keyframes sign-invert {
-	0%,
-	49.9% {
-		background-color: var(--sign-fg);
-		color: var(--sign-bg);
-	}
-	50%,
-	100% {
-		background-color: var(--sign-bg);
-		color: var(--sign-fg);
-	}
+.slider::-webkit-slider-runnable-track {
+	height: 0.75rem;
+	border-radius: 9999px;
+	border: 1px solid var(--color-line-strong);
+	background: var(--color-surface);
 }
-.sign-blink-flash .sign-text {
-	animation: sign-flash 340ms linear infinite;
+.slider::-moz-range-track {
+	height: 0.75rem;
+	border-radius: 9999px;
+	border: 1px solid var(--color-line-strong);
+	background: var(--color-surface);
 }
-.sign-blink-strobe {
-	animation: sign-strobe 340ms linear infinite;
+.slider::-webkit-slider-thumb {
+	appearance: none;
+	width: 2.5rem;
+	height: 2.5rem;
+	margin-top: -0.9375rem;
+	border: 0;
+	border-radius: 9999px;
+	background: var(--color-fg);
 }
-.sign-blink-invert {
-	animation: sign-invert 400ms linear infinite;
+.slider::-moz-range-thumb {
+	width: 2.5rem;
+	height: 2.5rem;
+	border: 0;
+	border-radius: 9999px;
+	background: var(--color-fg);
 }
