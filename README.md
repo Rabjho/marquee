@@ -24,8 +24,12 @@ against a deployed build.
 
 | Path | What |
 | --- | --- |
-| `src/routes/+page.svelte` | The editing screen: text box, Go, stickers, playlist, presets |
-| `src/lib/components/Stage.svelte` | The sign: full-screen scroll, blink, tap to stop |
+| `src/routes/+page.svelte` | The editing screen: text box, Go, stickers, playlist, style presets |
+| `src/lib/components/Stage.svelte` | The playing screen: full screen, rotation, tap to stop |
+| `src/lib/components/Sign.svelte` | The sign surface itself, shared by the stage and the preview |
+| `src/lib/components/Preview.svelte` | The miniature sign next to the style options |
+| `src/lib/components/DrawingPad.svelte` | Finger drawing: one brush, a few inks, undo, clear |
+| `src/lib/components/DrawingView.svelte` | Renders a stored drawing at any size |
 | `src/lib/store.svelte.ts` | Messages and settings, saved to `localStorage` |
 | `src/lib/shake.svelte.ts` | Shake detection and the iOS motion permission |
 | `src/lib/presets.ts` | Speeds, colors, blink styles, stickers |

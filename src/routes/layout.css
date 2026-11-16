@@ -31,6 +31,8 @@ html {
 	background: var(--color-bg);
 	color: var(--color-fg);
 	-webkit-text-size-adjust: 100%;
+	/* Keeps focused controls clear of the sticky sign preview. */
+	scroll-padding-top: 14rem;
 }
 
 body {

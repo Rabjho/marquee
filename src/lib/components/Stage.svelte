@@ -1,24 +1,22 @@
 <script lang="ts">
 	// The sign itself: full screen, nothing but the message. Tap anywhere to stop.
 	import { onMount } from 'svelte';
-	import { BLINK_MS, COLORS, SPEEDS } from '../presets';
+	import { BLINK_MS, COLORS } from '../presets';
 	import { shake } from '../shake.svelte';
-	import { store } from '../store.svelte';
+	import { store, type Item } from '../store.svelte';
 	import { keepAwake } from '../wakelock';
+	import Sign from './Sign.svelte';
 
-	let { messages, onstop }: { messages: string[]; onstop: () => void } = $props();
+	let { items, onstop }: { items: Item[]; onstop: () => void } = $props();
 
-	/** Pause between playlist messages. */
+	/** Pause between playlist entries. */
 	const GAP_MS = 350;
-	/** How long a playlist message that fits without scrolling stays up. */
-	const HOLD_MS = 3000;
 
 	let viewportWidth = $state(window.innerWidth);
 	let viewportHeight = $state(window.innerHeight);
 	let index = $state(0);
 	let inGap = $state(false);
 	let blinking = $state(false);
-	let textEl = $state<HTMLElement>();
 	let stopButton: HTMLButtonElement;
 	let gapTimer: ReturnType<typeof setTimeout>;
 	let blinkTimer: ReturnType<typeof setTimeout>;
@@ -30,9 +28,8 @@
 	const height = $derived(rotated ? viewportWidth : viewportHeight);
 
 	const color = $derived(COLORS.find((c) => c.id === store.color) ?? COLORS[0]);
-	const speed = $derived(SPEEDS.find((s) => s.id === store.speed) ?? SPEEDS[1]);
-	const isPlaylist = $derived(messages.length > 1);
-	const text = $derived(messages[index % messages.length]);
+	const isPlaylist = $derived(items.length > 1);
+	const item = $derived(items[index % items.length]);
 	/** Shown when shaking is not possible, so blinking never depends on the sensor. */
 	const needsButton = $derived(shake.status === 'denied' || shake.status === 'unavailable');
 
@@ -40,7 +37,7 @@
 		if (inGap) return;
 		inGap = true;
 		gapTimer = setTimeout(() => {
-			index = (index + 1) % messages.length;
+			index = (index + 1) % items.length;
 			inGap = false;
 		}, GAP_MS);
 	}
@@ -53,38 +50,6 @@
 
 	/** Shake, or its fallback button: blink a single message, skip ahead in a playlist. */
 	const trigger = () => (isPlaylist ? next() : blink());
-
-	// Position the message: centred if it fits, otherwise scrolling across.
-	$effect(() => {
-		const el = textEl;
-		if (!el) return;
-		void text;
-		void height;
-		const textWidth = el.offsetWidth;
-		el.style.transform = '';
-
-		if (textWidth <= width) {
-			el.style.transform = `translateX(${(width - textWidth) / 2}px)`;
-			if (!isPlaylist) return;
-			const hold = setTimeout(next, HOLD_MS);
-			return () => clearTimeout(hold);
-		}
-
-		const leftward = store.direction === 'left';
-		const scroll = el.animate(
-			[
-				{ transform: `translateX(${leftward ? width : -textWidth}px)` },
-				{ transform: `translateX(${leftward ? -textWidth : width}px)` }
-			],
-			{
-				duration: ((width + textWidth) / (speed.screensPerSecond * width)) * 1000,
-				iterations: isPlaylist ? 1 : Infinity,
-				fill: 'both'
-			}
-		);
-		scroll.onfinish = next;
-		return () => scroll.cancel();
-	});
 
 	onMount(() => {
 		stopButton.focus();
@@ -123,11 +88,8 @@
 />
 
 <div
-	class="fixed inset-0 z-50 overflow-hidden {blinking ? `sign-blink-${store.blink}` : ''}"
-	style:--sign-fg={color.fg}
-	style:--sign-bg={color.bg}
+	class="fixed inset-0 z-50 overflow-hidden"
 	style:background-color={color.bg}
-	style:color={color.fg}
 	role="dialog"
 	aria-modal="true"
 	aria-label="Sign playing"
@@ -140,21 +102,11 @@
 	>
 		<button
 			bind:this={stopButton}
-			class="absolute inset-0 cursor-pointer overflow-hidden outline-none"
+			class="absolute inset-0 cursor-pointer outline-none"
 			aria-label="Stop the sign"
 			onclick={onstop}
 		>
-			{#if !inGap}
-				<span
-					bind:this={textEl}
-					class="sign-text absolute top-0 left-0 font-black whitespace-pre will-change-transform"
-					style:font-size="{height * 0.9}px"
-					style:line-height="{height}px"
-					dir="auto"
-				>
-					{text}
-				</span>
-			{/if}
+			<Sign item={inGap ? null : item} {width} {height} {blinking} loop={!isPlaylist} onend={next} />
 		</button>
 
 		{#if needsButton}

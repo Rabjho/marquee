@@ -1,19 +1,36 @@
 <script lang="ts">
 	import { onMount, tick } from 'svelte';
 	import Choice from '../lib/components/Choice.svelte';
+	import DrawingPad from '../lib/components/DrawingPad.svelte';
+	import DrawingView from '../lib/components/DrawingView.svelte';
+	import Preview from '../lib/components/Preview.svelte';
 	import Stage from '../lib/components/Stage.svelte';
-	import { BLINKS, COLORS, DIRECTIONS, SPEEDS, STICKERS } from '../lib/presets';
+	import { BLINK_MS, BLINKS, COLORS, DIRECTIONS, SIZES, SPEEDS, STICKERS } from '../lib/presets';
 	import { shake } from '../lib/shake.svelte';
-	import { clean, store, type Card } from '../lib/store.svelte';
+	import { clean, hasContent, store, type Card, type Drawing, type Item } from '../lib/store.svelte';
 
-	/** The messages on the sign right now, or null while editing. */
-	let playing = $state<string[] | null>(null);
+	/** What is on the sign right now, or null while editing. */
+	let playing = $state<Item[] | null>(null);
+	/** The drawing pad, when open: for a new card (id null) or an existing one. */
+	let drawing = $state<{ id: string | null; drawing?: Drawing } | null>(null);
 	let notice = $state('');
 	let showInstallHint = $state(false);
 	let showQr = $state(false);
 	/** The QR library, loaded the first time a code is asked for to keep the first load small. */
 	let qrcode = $state.raw<typeof import('qrcode-generator') | null>(null);
 	let input: HTMLTextAreaElement;
+	let previewBlinking = $state(false);
+	let previewBlinkTimer: ReturnType<typeof setTimeout>;
+
+	/** Where the message in the text box sits in the playlist. */
+	const position = $derived(store.cards.findIndex((card) => card.id === store.selectedId) + 1);
+
+	/** Shows the chosen blink style in the preview for as long as a real blink lasts. */
+	function demoBlink() {
+		previewBlinking = true;
+		clearTimeout(previewBlinkTimer);
+		previewBlinkTimer = setTimeout(() => (previewBlinking = false), BLINK_MS);
+	}
 
 	// It remembers: every change is saved as it happens.
 	$effect(() => store.save());
@@ -37,28 +54,37 @@
 		input.focus();
 	});
 
-	function play(messages: string[]) {
-		if (messages.length === 0) {
+	const toItem = (card: Card): Item => ({ text: clean(card.text), drawing: card.drawing });
+
+	function play(cards: Card[]) {
+		const items = cards.filter(hasContent).map(toItem);
+		if (items.length === 0) {
 			input.focus();
 			return;
 		}
 		// Asked from inside the tap, as iOS requires for the motion permission prompt.
 		shake.start();
 		notice = '';
-		playing = messages;
+		playing = items;
 	}
 
 	function go() {
 		store.prune();
-		play([clean(store.selected.text)].filter(Boolean));
+		play([store.selected]);
 	}
 
 	function playCard(card: Card) {
-		store.select(card.id);
-		play([clean(card.text)].filter(Boolean));
+		// Only text cards go in the text box.
+		if (!card.drawing) store.select(card.id);
+		play([card]);
 	}
 
-	const playAll = () => play(store.playable.map((card) => clean(card.text)));
+	const playAll = () => play(store.playable);
+
+	function saveDrawing(result: Drawing) {
+		store.saveDrawing(drawing?.id ?? null, result);
+		drawing = null;
+	}
 
 	/** Back to the text box, as the sign closes. */
 	async function stop() {
@@ -120,6 +146,8 @@
 		}
 	}
 
+	const slot =
+		'min-h-14 w-full cursor-pointer rounded-lg border border-dashed border-line-strong px-4 text-lg font-semibold active:bg-surface';
 	const secondary =
 		'min-h-14 cursor-pointer rounded-lg border border-line-strong px-4 text-lg font-semibold active:bg-surface';
 </script>
@@ -127,7 +155,7 @@
 <!-- A shared link opened while the app is already showing only changes the hash. -->
 <svelte:window onhashchange={readSharedLink} />
 
-<main class="mx-auto flex w-full max-w-md flex-col gap-8 px-4 pt-4 pb-12" inert={playing !== null}>
+<main class="mx-auto flex w-full max-w-md flex-col gap-8 px-4 pt-4 pb-12" inert={playing !== null || drawing !== null}>
 	<h1 class="sr-only">Marquee</h1>
 
 	<form
@@ -138,7 +166,9 @@
 		}}
 	>
 		<div class="flex flex-col gap-2">
-			<label for="message" class="font-semibold text-fg-muted">Your message</label>
+			<label for="message" class="font-semibold text-fg-muted">
+				{store.cards.length > 1 ? `Message ${position} of ${store.cards.length}` : 'Your message'}
+			</label>
 			<textarea
 				id="message"
 				bind:this={input}
@@ -189,48 +219,70 @@
 	</section>
 
 	<section class="flex flex-col gap-2">
-		{#if store.cards.length > 1}
-			<h2 class="font-semibold text-fg-muted">Playlist</h2>
-			<ul class="flex flex-col gap-2">
+		<h2 class="font-semibold text-fg-muted">Playlist</h2>
+		{#if store.cards.length === 1}
+			<p class="text-fg-muted">Line up several messages or drawings and play them one after another.</p>
+		{/if}
+		<ul class="flex flex-col gap-2">
+			{#if store.cards.length > 1}
 				{#each store.cards as card (card.id)}
 					{@const label = clean(card.text)}
 					{@const current = card.id === store.selectedId}
 					<li class="flex gap-2">
 						<button
-							class="min-h-14 min-w-0 flex-1 cursor-pointer truncate rounded-lg border border-line-strong bg-surface px-4 text-left text-xl font-semibold {current
+							class="flex min-h-14 min-w-0 flex-1 cursor-pointer items-center gap-3 rounded-lg border border-line-strong bg-surface px-4 text-left text-xl font-semibold {current
 								? 'border-l-8 border-l-brand'
 								: ''}"
 							aria-current={current}
-							aria-label={label ? `Play ${label}` : 'New message'}
+							aria-label={card.drawing ? 'Play drawing' : label ? `Play ${label}` : 'New message'}
 							onclick={() => playCard(card)}
 						>
-							{#if label}
-								{label}
+							<span class="text-fg-muted" aria-hidden="true">▶</span>
+							{#if card.drawing}
+								<DrawingView drawing={card.drawing} height={40} />
 							{:else}
-								<span class="text-fg-muted">New message</span>
+								<span class="truncate {label ? '' : 'text-fg-muted'}">{label || 'New message'}</span>
 							{/if}
 						</button>
+						{#if card.drawing}
+							<button
+								class="min-h-14 w-14 shrink-0 cursor-pointer rounded-lg text-2xl font-bold active:bg-surface"
+								aria-label="Edit drawing"
+								onclick={() => (drawing = { id: card.id, drawing: card.drawing })}
+							>
+								✎
+							</button>
+						{/if}
 						<button
 							class="min-h-14 w-14 shrink-0 cursor-pointer rounded-lg text-2xl font-bold text-danger active:bg-surface"
-							aria-label="Delete {label || 'new message'}"
+							aria-label="Delete {card.drawing ? 'drawing' : label || 'new message'}"
 							onclick={() => store.remove(card.id)}
 						>
 							✕
 						</button>
 					</li>
 				{/each}
-			</ul>
-		{/if}
-		<div class="grid auto-cols-fr grid-flow-col gap-2">
-			<button class={secondary} onclick={addCard}>+ Add</button>
-			{#if store.playable.length > 1}
-				<button class={secondary} onclick={playAll}>Play all</button>
 			{/if}
-		</div>
+			<!-- Drawn as empty slots in the list, so it is clear what gets added and where. -->
+			<li class="grid grid-cols-2 gap-2">
+				<button class={slot} onclick={addCard}>+ Message</button>
+				<button class={slot} onclick={() => (drawing = { id: null })}>+ Drawing</button>
+			</li>
+		</ul>
+		{#if store.playable.length > 1}
+			<button class={secondary} onclick={playAll}>▶ Play all on repeat</button>
+		{/if}
 	</section>
 
 	<section class="flex flex-col gap-6">
-		<h2 class="sr-only">Style</h2>
+		<h2 class="font-semibold text-fg-muted">Style</h2>
+		<!-- Stays in view while scrolling through the options below it. -->
+		{#if !playing}
+			<div class="sticky top-0 z-10 -mx-4 -mt-4 bg-bg px-4 py-2">
+				<Preview text={clean(store.selected.text) || 'TAXI PLEASE'} blinking={previewBlinking} />
+			</div>
+		{/if}
+		<Choice legend="Text size" name="size" options={SIZES} bind:value={store.size} />
 		<Choice legend="Speed" name="speed" options={SPEEDS} bind:value={store.speed} />
 
 		<fieldset>
@@ -250,7 +302,7 @@
 			</div>
 		</fieldset>
 
-		<Choice legend="Blink" name="blink" options={BLINKS} bind:value={store.blink} />
+		<Choice legend="Blink" name="blink" options={BLINKS} bind:value={store.blink} onpick={demoBlink} />
 		<Choice legend="Scroll" name="direction" options={DIRECTIONS} bind:value={store.direction} />
 	</section>
 
@@ -286,5 +338,9 @@
 </main>
 
 {#if playing}
-	<Stage messages={playing} onstop={stop} />
+	<Stage items={playing} onstop={stop} />
+{/if}
+
+{#if drawing}
+	<DrawingPad drawing={drawing.drawing} onsave={saveDrawing} oncancel={() => (drawing = null)} />
 {/if}
