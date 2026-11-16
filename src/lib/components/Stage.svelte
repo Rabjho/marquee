@@ -1,7 +1,7 @@
 <script lang="ts">
 	// The sign itself: full screen, nothing but the message. Tap anywhere to stop.
 	import { onMount } from 'svelte';
-	import { BLINK_MS, COLORS } from '../presets';
+	import { blinkMs, COLORS } from '../presets';
 	import { shake } from '../shake.svelte';
 	import { store, type Item } from '../store.svelte';
 	import { keepAwake } from '../wakelock';
@@ -48,7 +48,7 @@
 	function blink() {
 		blinking = true;
 		clearTimeout(blinkTimer);
-		blinkTimer = setTimeout(() => (blinking = false), BLINK_MS);
+		blinkTimer = setTimeout(() => (blinking = false), blinkMs(store.blinkRate));
 	}
 
 	/** Shake, or its fallback button: blink a single message, skip ahead in a playlist. */

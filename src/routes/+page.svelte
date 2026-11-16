@@ -7,8 +7,8 @@
 	import Slider from '../lib/components/Slider.svelte';
 	import Stage from '../lib/components/Stage.svelte';
 	import {
-		BLINK_MS,
 		BLINK_RATE,
+		blinkMs,
 		BLINKS,
 		COLORS,
 		DIRECTIONS,
@@ -30,7 +30,9 @@
 	let showQr = $state(false);
 	/** The QR library, loaded the first time a code is asked for to keep the first load small. */
 	let qrcode = $state.raw<typeof import('qrcode-generator') | null>(null);
-	let input: HTMLTextAreaElement;
+	let input = $state<HTMLTextAreaElement>()!;
+	/** Bumped on every Go, which replaces the text box with a fresh one. See `play`. */
+	let textBoxKey = $state(0);
 	let previewBlinking = $state(false);
 	let previewBlinkTimer: ReturnType<typeof setTimeout>;
 
@@ -41,7 +43,7 @@
 	function demoBlink() {
 		previewBlinking = true;
 		clearTimeout(previewBlinkTimer);
-		previewBlinkTimer = setTimeout(() => (previewBlinking = false), BLINK_MS);
+		previewBlinkTimer = setTimeout(() => (previewBlinking = false), blinkMs(store.blinkRate));
 	}
 
 	// It remembers: every change is saved as it happens.
@@ -77,6 +79,9 @@
 		// Asked from inside the tap, as iOS requires for the motion permission prompt.
 		shake.start();
 		notice = '';
+		// iOS offers "Undo Typing" when the phone is shaken and a text box has typing to undo.
+		// A page cannot switch that off, so the text box is swapped for a fresh one with no history.
+		textBoxKey++;
 		playing = items;
 	}
 
@@ -181,24 +186,26 @@
 			<label for="message" class="font-semibold text-fg-muted">
 				{store.cards.length > 1 ? `Message ${position} of ${store.cards.length}` : 'Your message'}
 			</label>
-			<textarea
-				id="message"
-				bind:this={input}
-				bind:value={store.selected.text}
-				class="w-full resize-none rounded-lg border border-line-strong bg-surface p-4 text-2xl font-semibold placeholder:text-fg-muted"
-				rows="2"
-				placeholder="TAXI PLEASE"
-				enterkeyhint="go"
-				autocapitalize="characters"
-				autocomplete="off"
-				dir="auto"
-				onkeydown={(event) => {
-					if (event.key === 'Enter' && !event.isComposing) {
-						event.preventDefault();
-						go();
-					}
-				}}
-			></textarea>
+			{#key textBoxKey}
+				<textarea
+					id="message"
+					bind:this={input}
+					bind:value={store.selected.text}
+					class="w-full resize-none rounded-lg border border-line-strong bg-surface p-4 text-2xl font-semibold placeholder:text-fg-muted"
+					rows="2"
+					placeholder="TAXI PLEASE"
+					enterkeyhint="go"
+					autocapitalize="characters"
+					autocomplete="off"
+					dir="auto"
+					onkeydown={(event) => {
+						if (event.key === 'Enter' && !event.isComposing) {
+							event.preventDefault();
+							go();
+						}
+					}}
+				></textarea>
+			{/key}
 		</div>
 
 		<button
