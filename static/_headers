@@ -1,0 +1,20 @@
+# Security headers for every response. The rest of the content security policy is a <meta> tag
+# generated at build time (see vite.config.ts).
+/*
+  X-Content-Type-Options: nosniff
+  X-Frame-Options: DENY
+  Content-Security-Policy: frame-ancestors 'none'
+  Referrer-Policy: no-referrer
+  Cross-Origin-Opener-Policy: same-origin
+  Permissions-Policy: camera=(), microphone=(), geolocation=(), payment=(), usb=()
+
+# The service worker and the app shell must always be revalidated so updates reach installed apps.
+/service-worker.js
+  Cache-Control: no-cache
+
+/
+  Cache-Control: no-cache
+
+# Hashed build output never changes.
+/_app/immutable/*
+  Cache-Control: public, max-age=31536000, immutable

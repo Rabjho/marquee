@@ -1,0 +1,9 @@
+// Cloudflare Worker serving the static build. There is no Worker script: the assets
+// binding alone serves ./build. Build with `npm run build`, deploy with `npx wrangler deploy`.
+{
+	"name": "marquee",
+	"compatibility_date": "2026-11-01",
+	"assets": {
+		"directory": "./build"
+	}
+}
