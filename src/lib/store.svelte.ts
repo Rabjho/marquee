@@ -315,6 +315,13 @@ class Store {
 		if (this.editing && !!this.editing.drawing !== (mode === 'draw')) this.stopEditing();
 	}
 
+	/** Empties the text box and drawing pad, as after Go: what was there is in the saved list. */
+	clearEditor() {
+		this.draft = '';
+		this.sketch = [];
+		this.editingId = null;
+	}
+
 	/** Lets go of the saved entry, keeping the text box and drawing pad as they are. */
 	stopEditing() {
 		this.editingId = null;

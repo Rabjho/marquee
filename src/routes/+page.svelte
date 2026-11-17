@@ -80,7 +80,10 @@
 		playing = items;
 	}
 
-	/** Plays the playlist with what is being edited in it, and keeps that in the saved list. */
+	/**
+	 * Plays the playlist with what is being edited in it, then files that away in the saved
+	 * list and empties the editor, like sending a message. Nothing left behind tags along next time.
+	 */
 	function go() {
 		const items = store.lineup;
 		if (items.length === 0) {
@@ -89,8 +92,7 @@
 		}
 		play(items);
 		store.record();
-		// Done with the saved entry: what comes next is a new one.
-		store.stopEditing();
+		store.clearEditor();
 	}
 
 	/** Back to the text box, as the sign closes. */
@@ -107,11 +109,11 @@
 		input?.focus({ preventScroll: true });
 	}
 
-	const goLabel = $derived(
-		store.lineup.length > 1
-			? `Go: play the playlist, ${store.lineup.length} entries`
-			: `Go: show this ${store.mode === 'draw' ? 'drawing' : 'message'}`
-	);
+	const goLabel = $derived.by(() => {
+		const count = store.lineup.length;
+		if (count === 1 && store.current) return `Go: show this ${store.mode === 'draw' ? 'drawing' : 'message'}`;
+		return `Go: play the playlist, ${count} ${count === 1 ? 'entry' : 'entries'}`;
+	});
 
 	/** The link that carries the message in the text box, as /#t=HELLO. */
 	const shareUrl = $derived.by(() => {
@@ -233,8 +235,8 @@
 					></textarea>
 				{/key}
 			{:else}
-				<!-- A fresh pad for each saved drawing, so it starts at the beginning of the strip. -->
-				{#key store.editingId}
+				<!-- A fresh pad for each saved drawing and after each Go, so it starts at the beginning of the strip. -->
+				{#key `${store.editingId}:${textBoxKey}`}
 					<DrawingPad />
 				{/key}
 			{/if}
