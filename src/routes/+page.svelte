@@ -235,39 +235,6 @@
 			Go
 		</button>
 
-		<!-- A link can only carry text. -->
-		{#if store.mode === 'text'}
-			<div class="grid auto-cols-fr grid-flow-col gap-2">
-				<button type="button" class={secondary} disabled={!clean(store.draft)} onclick={share}>Share link</button>
-				<button
-					type="button"
-					class={secondary}
-					disabled={!clean(store.draft)}
-					aria-expanded={showQr}
-					onclick={toggleQr}
-				>
-					{showQr ? 'Hide QR code' : 'QR code'}
-				</button>
-			</div>
-			{#if qr && clean(store.draft)}
-				<!-- Black on white with a 4-module quiet zone, which scanners need. -->
-				<svg
-					class="w-full rounded-lg"
-					viewBox="-4 -4 {qr.size + 8} {qr.size + 8}"
-					shape-rendering="crispEdges"
-					role="img"
-					aria-label="QR code that opens this message"
-				>
-					<rect x="-4" y="-4" width="100%" height="100%" fill="#fff" />
-					<path d={qr.path} fill="#000" />
-				</svg>
-			{:else if showQr && qrcode && clean(store.draft)}
-				<p class="text-fg-muted">This message is too long for a QR code. Share the link instead.</p>
-			{/if}
-		{/if}
-		<!-- Empty until there is news, but always present so screen readers announce it. -->
-		<p class="text-fg-muted empty:hidden" role="status">{notice}</p>
-
 		{#if shake.status === 'denied'}
 			<p class="text-fg-muted">
 				Shake is off because motion access was denied. To be asked again, close the app completely
@@ -364,6 +331,42 @@
 			oninput={demoBlink}
 		/>
 	</section>
+
+	<!-- Sharing comes last: it is not what the app is for. A link can only carry text. -->
+	{#if store.mode === 'text'}
+		<section class="flex flex-col gap-2" aria-labelledby="share-title">
+			<h2 id="share-title" class={label}>Share</h2>
+			<div class="grid auto-cols-fr grid-flow-col gap-2">
+				<button type="button" class={secondary} disabled={!clean(store.draft)} onclick={share}>Share link</button>
+				<button
+					type="button"
+					class={secondary}
+					disabled={!clean(store.draft)}
+					aria-expanded={showQr}
+					onclick={toggleQr}
+				>
+					{showQr ? 'Hide QR code' : 'QR code'}
+				</button>
+			</div>
+			{#if qr && clean(store.draft)}
+				<!-- Black on white with a 4-module quiet zone, which scanners need. -->
+				<svg
+					class="w-full rounded-lg"
+					viewBox="-4 -4 {qr.size + 8} {qr.size + 8}"
+					shape-rendering="crispEdges"
+					role="img"
+					aria-label="QR code that opens this message"
+				>
+					<rect x="-4" y="-4" width="100%" height="100%" fill="#fff" />
+					<path d={qr.path} fill="#000" />
+				</svg>
+			{:else if showQr && qrcode && clean(store.draft)}
+				<p class="text-fg-muted">This message is too long for a QR code. Share the link instead.</p>
+			{/if}
+			<!-- Empty until there is news, but always present so screen readers announce it. -->
+			<p class="text-fg-muted empty:hidden" role="status">{notice}</p>
+		</section>
+	{/if}
 
 	{#if showInstallHint}
 		<p class="text-fg-muted">To install, tap Share, then Add to Home Screen.</p>

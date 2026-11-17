@@ -20,11 +20,8 @@ import { trimmed, type Drawing, type Stroke } from './drawing';
 
 export type { Drawing, Stroke };
 
-/**
- * A saved message or drawing (its text is then unused). Every message that is played is
- * kept in the list. `on` puts it in the playlist, which plays in list order.
- */
-export type Entry = { id: string; text: string; drawing?: Drawing; on: boolean };
+/** A saved message or drawing (its text is then unused). Every message that is played is kept. */
+export type Entry = { id: string; text: string; drawing?: Drawing };
 /** What the sign shows. */
 export type Item = { text: string; drawing?: Drawing };
 /** Whether Go shows the text box or the drawing pad. */
@@ -39,6 +36,8 @@ type Saved = {
 	/** The saved entry being edited, if any: Go then updates it in place. */
 	editingId: string | null;
 	entries: Entry[];
+	/** Ids of the entries in the playlist, in the order they were added, which is the order they play in. */
+	playlistIds: string[];
 	size: SizeId;
 	look: LookId;
 	frame: FrameId;
@@ -62,8 +61,7 @@ const hexOr = (value: unknown, fallback: string) =>
 const newEntry = (text: string, drawing?: Drawing): Entry => ({
 	id: crypto.randomUUID(),
 	text,
-	drawing,
-	on: false
+	drawing
 });
 
 const oneOf = <T extends { id: string }>(list: readonly T[], id: unknown, fallback: T['id']) =>
@@ -108,12 +106,12 @@ function load(): Saved {
 	} catch {
 		// Missing, corrupt or blocked storage: start fresh.
 	}
-	let entries: Entry[];
+	let entries: (Entry & { on?: boolean })[];
 	let draft = typeof raw.draft === 'string' ? raw.draft : '';
 	if (Array.isArray(raw.entries)) {
 		entries = raw.entries
 			.filter((e) => typeof e?.id === 'string' && typeof e?.text === 'string')
-			.map((e) => ({ id: e.id, text: e.text, drawing: loadDrawing(e.drawing), on: e.on === true }));
+			.map((e) => ({ id: e.id, text: e.text, drawing: loadDrawing(e.drawing), on: (e as { on?: unknown }).on === true }));
 	} else {
 		// Older versions kept a playlist of cards, and the text box edited one of them. The
 		// cards become entries; when there were several, they were a playlist, so they start on.
@@ -127,13 +125,19 @@ function load(): Saved {
 			.filter(hasContent);
 	}
 	entries = entries.filter(hasContent);
+	const ids = new Set(entries.map((e) => e.id));
+	// Older versions marked playlist entries with `on` and played them in list order.
+	const playlistIds = Array.isArray(raw.playlistIds)
+		? [...new Set(raw.playlistIds.filter((id) => ids.has(id)))]
+		: entries.filter((e) => e.on).map((e) => e.id);
 	const editingId = entries.some((e) => e.id === raw.editingId) ? raw.editingId! : null;
 	return {
 		mode: raw.mode === 'draw' ? 'draw' : 'text',
 		draft,
 		sketch: loadDrawing({ strokes: raw.sketch })?.strokes ?? [],
 		editingId,
-		entries,
+		entries: entries.map(({ id, text, drawing }) => ({ id, text, drawing })),
+		playlistIds,
 		size: oneOf(SIZES, raw.size, 'big'),
 		look: oneOf(LOOKS, raw.look, 'smooth'),
 		frame: oneOf(FRAMES, raw.frame, 'none'),
@@ -170,6 +174,7 @@ class Store {
 	sketch = $state<Stroke[]>([]);
 	editingId = $state<string | null>(null);
 	entries = $state<Entry[]>([]);
+	playlistIds = $state<string[]>([]);
 	size = $state<SizeId>('big');
 	look = $state<LookId>('smooth');
 	frame = $state<FrameId>('none');
@@ -211,9 +216,33 @@ class Store {
 		return this.hdr || this.color === 'white' || this.color === 'paper' ? null : this.colors.fg;
 	}
 
-	/** The entries switched on, in list order. */
+	/** The playlist, in the order its entries were added. */
 	get playlist(): Entry[] {
-		return this.entries.filter((e) => e.on);
+		return this.playlistIds.flatMap((id) => this.entries.find((e) => e.id === id) ?? []);
+	}
+
+	/** An entry's place in the playlist, from 1, or 0 when it is not in it. */
+	place(id: string): number {
+		return this.playlistIds.indexOf(id) + 1;
+	}
+
+	/** Adds an entry to the end of the playlist, or takes it out. */
+	togglePlaylist(id: string) {
+		this.playlistIds = this.place(id)
+			? this.playlistIds.filter((p) => p !== id)
+			: [...this.playlistIds, id];
+	}
+
+	/** Empties the playlist. The saved entries stay. */
+	clearPlaylist() {
+		this.playlistIds = [];
+	}
+
+	/** Deletes every saved entry, and with them the playlist. */
+	clearHistory() {
+		this.entries = [];
+		this.playlistIds = [];
+		this.editingId = null;
 	}
 
 	/** The saved entry being edited, if any. */
@@ -277,14 +306,8 @@ class Store {
 
 	remove(id: string) {
 		this.entries = this.entries.filter((e) => e.id !== id);
+		this.playlistIds = this.playlistIds.filter((p) => p !== id);
 		if (this.editingId === id) this.editingId = null;
-	}
-
-	/** Moves an entry to a new place in the list. */
-	move(from: number, to: number) {
-		if (from === to || to < 0 || to >= this.entries.length) return;
-		const [entry] = this.entries.splice(from, 1);
-		this.entries.splice(to, 0, entry);
 	}
 
 	save() {
@@ -294,6 +317,7 @@ class Store {
 			sketch: this.sketch,
 			editingId: this.editingId,
 			entries: this.entries,
+			playlistIds: this.playlistIds,
 			size: this.size,
 			look: this.look,
 			frame: this.frame,

@@ -1,8 +1,7 @@
 <script lang="ts">
-	// Every message and drawing that has been played, in one list. Ticked entries
-	// make up the playlist, which plays in list order. Arranging shows handles to drag
-	// entries into order, and buttons to delete them.
-	import { tick } from 'svelte';
+	// Every message and drawing that has been played, in one list, newest first. Tapping +
+	// adds an entry to the playlist, which plays in the order the entries were added.
+	// Delete mode swaps the edit buttons for delete buttons and offers to clear everything.
 	import { clean, store, type Entry } from '../store.svelte';
 	import { label as heading, secondary, textButton } from '../ui';
 	import DrawingView from './DrawingView.svelte';
@@ -17,45 +16,22 @@
 		onedit: () => void;
 	} = $props();
 
-	let arranging = $state(false);
-	/** The entry being dragged by its handle. */
-	let dragId = $state<string | null>(null);
-	const rows: Record<string, HTMLElement> = {};
+	let deleting = $state(false);
+	/** Clear history asks once before it deletes everything. */
+	let confirming = $state(false);
 
 	const name = (entry: Entry) => (entry.drawing ? 'drawing' : clean(entry.text));
 
-	// Nothing left to arrange.
+	// Nothing left to delete.
 	$effect(() => {
-		if (store.entries.length === 0) arranging = false;
+		if (store.entries.length === 0) deleting = false;
+	});
+	$effect(() => {
+		if (!deleting) confirming = false;
 	});
 
-	function dragStart(event: PointerEvent, id: string) {
-		(event.currentTarget as Element).setPointerCapture(event.pointerId);
-		dragId = id;
-	}
-
-	/** Moves the dragged entry to the row under the finger. */
-	function dragMove(event: PointerEvent) {
-		if (!dragId) return;
-		const from = store.entries.findIndex((e) => e.id === dragId);
-		const to = store.entries.findIndex((e) => {
-			const box = rows[e.id]?.getBoundingClientRect();
-			return box && event.clientY >= box.top && event.clientY < box.bottom;
-		});
-		if (to !== -1) store.move(from, to);
-	}
-
-	/** Arrow keys on a handle move its entry one place, for when dragging is not an option. */
-	async function moveByKey(event: KeyboardEvent, id: string) {
-		const step = event.key === 'ArrowUp' ? -1 : event.key === 'ArrowDown' ? 1 : 0;
-		if (!step) return;
-		event.preventDefault();
-		const from = store.entries.findIndex((e) => e.id === id);
-		store.move(from, from + step);
-		// Moving the row in the page can take focus off the handle.
-		await tick();
-		rows[id]?.querySelector<HTMLElement>('[data-handle]')?.focus();
-	}
+	/** The confirmation takes focus from the button that opened it, which is gone. */
+	const focus = (node: HTMLElement) => node.focus();
 
 	const square =
 		'flex min-h-14 w-14 shrink-0 cursor-pointer items-center justify-center rounded-lg text-2xl font-bold active:bg-surface';
@@ -65,76 +41,66 @@
 	<div class="flex min-h-12 items-center justify-between gap-2">
 		<h2 id="saved-title" class={heading}>Saved</h2>
 		{#if store.entries.length > 0}
-			<button
-				class={textButton}
-				aria-pressed={arranging}
-				onclick={() => (arranging = !arranging)}
-			>
-				{arranging ? 'Done' : 'Arrange'}
+			<button class={textButton} aria-pressed={deleting} onclick={() => (deleting = !deleting)}>
+				{deleting ? 'Done' : 'Delete'}
 			</button>
 		{/if}
 	</div>
 
 	<!-- Always shown, so the playlist is there to be found before anything is in it. -->
-	<button
-		class={secondary}
-		disabled={store.playlist.length === 0}
-		onclick={() => onplay(store.playlist)}
-	>
-		▶ Play playlist{store.playlist.length ? ` (${store.playlist.length})` : ''}
-	</button>
+	<div class="flex gap-2">
+		<button
+			class="{secondary} flex-1"
+			disabled={store.playlist.length === 0}
+			onclick={() => onplay(store.playlist)}
+		>
+			▶ Play playlist{store.playlist.length ? ` (${store.playlist.length})` : ''}
+		</button>
+		<button
+			class={secondary}
+			aria-label="Clear playlist"
+			disabled={store.playlist.length === 0}
+			onclick={() => store.clearPlaylist()}
+		>
+			Clear
+		</button>
+	</div>
 
 	{#if store.entries.length === 0}
-		<p class="text-fg-muted">Messages and drawings you show are kept here. Tap + on them to build a playlist.</p>
-	{:else if arranging}
-		<p class="text-fg-muted">Drag ≡ to change the order.</p>
+		<p class="text-fg-muted">
+			Messages and drawings you show are kept here. Tap + on them to build a playlist; it plays in the
+			order you tap.
+		</p>
 	{/if}
 
 	<ul class="flex flex-col gap-2">
 		{#each store.entries as entry (entry.id)}
 			{@const label = name(entry)}
-			<li
-				bind:this={rows[entry.id]}
-				class="flex gap-2 rounded-lg {dragId === entry.id ? 'bg-surface outline-2 outline-brand' : ''}"
-			>
-				{#if arranging}
-					<button
-						data-handle
-						class="{square} cursor-grab touch-none text-fg-muted"
-						aria-label="Move {label}. Use the up and down arrow keys."
-						onpointerdown={(event) => dragStart(event, entry.id)}
-						onpointermove={dragMove}
-						onpointerup={() => (dragId = null)}
-						onpointercancel={() => (dragId = null)}
-						onkeydown={(event) => moveByKey(event, entry.id)}
-					>
-						≡
-					</button>
-				{:else}
-					<!-- Off: a + to add it. On: its place in the playlist. -->
-					<label
-						class="{square} relative border border-dashed border-line-strong text-fg-muted has-checked:border-solid has-checked:border-brand has-checked:bg-brand has-checked:text-on-brand has-focus-visible:outline-2 has-focus-visible:outline-offset-2 has-focus-visible:outline-focus"
-					>
-						<input
-							class="absolute inset-0 cursor-pointer opacity-0"
-							type="checkbox"
-							aria-label="In playlist: {label}"
-							bind:checked={entry.on}
-						/>
-						<span aria-hidden="true">{entry.on ? store.playlist.indexOf(entry) + 1 : '+'}</span>
-					</label>
-				{/if}
+			{@const place = store.place(entry.id)}
+			<li class="flex gap-2">
+				<!-- Off: a + to add it. On: its place in the playlist. -->
+				<label
+					class="{square} relative border border-dashed border-line-strong text-fg-muted has-checked:border-solid has-checked:border-brand has-checked:bg-brand has-checked:text-on-brand has-focus-visible:outline-2 has-focus-visible:outline-offset-2 has-focus-visible:outline-focus"
+				>
+					<input
+						class="absolute inset-0 cursor-pointer opacity-0"
+						type="checkbox"
+						aria-label="In playlist: {label}"
+						checked={place > 0}
+						onchange={() => store.togglePlaylist(entry.id)}
+					/>
+					<span aria-hidden="true">{place || '+'}</span>
+				</label>
 
 				<button
-					class="flex min-h-14 min-w-0 flex-1 items-center gap-3 rounded-lg border border-line-strong bg-surface px-4 text-left text-xl font-semibold {entry.id ===
+					class="flex min-h-14 min-w-0 flex-1 cursor-pointer items-center gap-3 rounded-lg border border-line-strong bg-surface px-4 text-left text-xl font-semibold {entry.id ===
 					store.editingId
 						? 'border-l-8 border-l-brand'
-						: ''} {arranging ? 'cursor-default' : 'cursor-pointer'}"
+						: ''}"
 					aria-label="Play {label}"
-					disabled={arranging}
 					onclick={() => onplay([entry])}
 				>
-					{#if !arranging}<span class="text-fg-muted" aria-hidden="true">▶</span>{/if}
+					<span class="text-fg-muted" aria-hidden="true">▶</span>
 					{#if entry.drawing}
 						<span class="min-w-0 overflow-hidden">
 							<DrawingView drawing={entry.drawing} height={40} />
@@ -144,7 +110,7 @@
 					{/if}
 				</button>
 
-				{#if arranging}
+				{#if deleting}
 					<button class="{square} text-danger" aria-label="Delete {label}" onclick={() => store.remove(entry.id)}>
 						✕
 					</button>
@@ -164,4 +130,26 @@
 		{/each}
 	</ul>
 
+	{#if deleting}
+		{#if confirming}
+			<div class="flex flex-col gap-2 rounded-lg border border-danger p-4" role="group" aria-labelledby="clear-question">
+				<p id="clear-question" class="font-semibold">
+					Delete all {store.entries.length} saved {store.entries.length === 1 ? 'entry' : 'entries'}? This can't be undone.
+				</p>
+				<div class="grid grid-cols-2 gap-2">
+					<button class={secondary} use:focus onclick={() => (confirming = false)}>Cancel</button>
+					<button
+						class="min-h-14 cursor-pointer rounded-lg bg-danger px-4 text-lg font-semibold text-bg"
+						onclick={() => store.clearHistory()}
+					>
+						Delete all
+					</button>
+				</div>
+			</div>
+		{:else}
+			<button
+				class="min-h-12 cursor-pointer self-start rounded-lg px-3 text-lg font-semibold text-danger active:bg-surface"
+				onclick={() => (confirming = true)}>Clear history</button>
+		{/if}
+	{/if}
 </section>
