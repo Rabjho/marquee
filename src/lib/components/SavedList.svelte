@@ -74,12 +74,21 @@
 		{/if}
 	</div>
 
+	<!-- Always shown, so the playlist is there to be found before anything is in it. -->
+	<button
+		class="min-h-14 cursor-pointer rounded-lg border border-line-strong px-4 text-lg font-semibold active:bg-surface disabled:cursor-default disabled:opacity-40"
+		disabled={store.playlist.length === 0}
+		onclick={() => onplay(store.playlist)}
+	>
+		▶ Play playlist{store.playlist.length ? ` (${store.playlist.length}) on repeat` : ''}
+	</button>
+
 	{#if store.entries.length === 0}
-		<p class="text-fg-muted">Messages and drawings you show are kept here. Tick them to make a playlist.</p>
+		<p class="text-fg-muted">Messages and drawings you show are kept here. Tap + on them to build a playlist.</p>
 	{:else if arranging}
 		<p class="text-fg-muted">Drag ≡ to change the order.</p>
-	{:else if store.playlist.length === 0}
-		<p class="text-fg-muted">Tick entries to add them to the playlist.</p>
+	{:else}
+		<p class="text-fg-muted">Tap + to add to the playlist. Numbers show the order it plays in.</p>
 	{/if}
 
 	<ul class="flex flex-col gap-2">
@@ -103,14 +112,17 @@
 						≡
 					</button>
 				{:else}
-					<label class="{square} relative border border-line-strong has-checked:border-brand has-checked:bg-brand has-checked:text-on-brand has-focus-visible:outline-2 has-focus-visible:outline-offset-2 has-focus-visible:outline-focus">
+					<!-- Off: a + to add it. On: its place in the playlist. -->
+					<label
+						class="{square} relative border border-dashed border-line-strong text-fg-muted has-checked:border-solid has-checked:border-brand has-checked:bg-brand has-checked:text-on-brand has-focus-visible:outline-2 has-focus-visible:outline-offset-2 has-focus-visible:outline-focus"
+					>
 						<input
 							class="absolute inset-0 cursor-pointer opacity-0"
 							type="checkbox"
 							aria-label="In playlist: {label}"
 							bind:checked={entry.on}
 						/>
-						<span aria-hidden="true">{entry.on ? '✓' : ''}</span>
+						<span aria-hidden="true">{entry.on ? store.playlist.indexOf(entry) + 1 : '+'}</span>
 					</label>
 				{/if}
 
@@ -153,14 +165,4 @@
 		{/each}
 	</ul>
 
-	{#if !arranging}
-		{#if store.playlist.length > 0}
-			<button
-				class="min-h-14 cursor-pointer rounded-lg border border-line-strong px-4 text-lg font-semibold active:bg-surface"
-				onclick={() => onplay(store.playlist)}
-			>
-				▶ Play playlist ({store.playlist.length}) on repeat
-			</button>
-		{/if}
-	{/if}
 </section>
