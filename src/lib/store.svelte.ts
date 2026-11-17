@@ -20,14 +20,20 @@ import type { Drawing, Stroke } from './drawing';
 
 export type { Drawing, Stroke };
 
-/** A playlist entry: a text message, or a drawing (its text is then unused). */
-export type Card = { id: string; text: string; drawing?: Drawing };
+/**
+ * A saved message or drawing (its text is then unused). Every message that is played is
+ * kept in the list. `on` puts it in the playlist, which plays in list order.
+ */
+export type Entry = { id: string; text: string; drawing?: Drawing; on: boolean };
 /** What the sign shows. */
 export type Item = { text: string; drawing?: Drawing };
 
 type Saved = {
-	cards: Card[];
-	selectedId: string;
+	/** What is in the text box. */
+	draft: string;
+	/** The saved message the text box is editing, if any: Go then updates it in place. */
+	editingId: string | null;
+	entries: Entry[];
 	size: SizeId;
 	look: LookId;
 	frame: FrameId;
@@ -50,7 +56,12 @@ const HEX = /^#[0-9a-f]{6}$/i;
 const hexOr = (value: unknown, fallback: string) =>
 	typeof value === 'string' && HEX.test(value) ? value.toLowerCase() : fallback;
 
-const newCard = (text = ''): Card => ({ id: crypto.randomUUID(), text });
+const newEntry = (text: string, drawing?: Drawing): Entry => ({
+	id: crypto.randomUUID(),
+	text,
+	drawing,
+	on: false
+});
 
 const oneOf = <T extends { id: string }>(list: readonly T[], id: unknown, fallback: T['id']) =>
 	list.some((item) => item.id === id) ? (id as T['id']) : fallback;
@@ -94,15 +105,30 @@ function load(): Saved {
 	} catch {
 		// Missing, corrupt or blocked storage: start fresh.
 	}
-	const cards: Card[] = (Array.isArray(raw.cards) ? raw.cards : [])
-		.filter((c) => typeof c?.id === 'string' && typeof c?.text === 'string')
-		.map((c) => ({ id: c.id, text: c.text, drawing: loadDrawing(c.drawing) }));
-	// The text box always needs a text card to edit.
-	if (!cards.some((c) => !c.drawing)) cards.push(newCard());
-	const selected = cards.find((c) => c.id === raw.selectedId && !c.drawing) ?? cards.find((c) => !c.drawing)!;
+	let entries: Entry[];
+	let draft = typeof raw.draft === 'string' ? raw.draft : '';
+	if (Array.isArray(raw.entries)) {
+		entries = raw.entries
+			.filter((e) => typeof e?.id === 'string' && typeof e?.text === 'string')
+			.map((e) => ({ id: e.id, text: e.text, drawing: loadDrawing(e.drawing), on: e.on === true }));
+	} else {
+		// Older versions kept a playlist of cards, and the text box edited one of them. The
+		// cards become entries; when there were several, they were a playlist, so they start on.
+		const old = raw as { cards?: { id?: unknown; text?: unknown; drawing?: unknown }[]; selectedId?: unknown };
+		const cards = (Array.isArray(old.cards) ? old.cards : []).filter(
+			(c) => typeof c?.id === 'string' && typeof c?.text === 'string'
+		) as { id: string; text: string; drawing?: unknown }[];
+		draft = cards.find((c) => c.id === old.selectedId && !c.drawing)?.text ?? '';
+		entries = cards
+			.map((c) => ({ id: c.id, text: c.text, drawing: loadDrawing(c.drawing), on: cards.length > 1 }))
+			.filter(hasContent);
+	}
+	entries = entries.filter(hasContent);
+	const editingId = entries.some((e) => e.id === raw.editingId && !e.drawing) ? raw.editingId! : null;
 	return {
-		cards,
-		selectedId: selected.id,
+		draft,
+		editingId,
+		entries,
 		size: oneOf(SIZES, raw.size, 'big'),
 		look: oneOf(LOOKS, raw.look, 'smooth'),
 		frame: oneOf(FRAMES, raw.frame, 'none'),
@@ -120,11 +146,18 @@ function load(): Saved {
 /** Messages are one line on the sign. */
 export const clean = (text: string) => text.replace(/\s+/g, ' ').trim();
 
-export const hasContent = (card: Card) => !!card.drawing || clean(card.text) !== '';
+export const hasContent = (entry: Pick<Entry, 'text' | 'drawing'>) =>
+	!!entry.drawing || clean(entry.text) !== '';
+
+export const toItem = (entry: Pick<Entry, 'text' | 'drawing'>): Item => ({
+	text: clean(entry.text),
+	drawing: entry.drawing
+});
 
 class Store {
-	cards = $state<Card[]>([]);
-	selectedId = $state('');
+	draft = $state('');
+	editingId = $state<string | null>(null);
+	entries = $state<Entry[]>([]);
 	size = $state<SizeId>('big');
 	look = $state<LookId>('smooth');
 	frame = $state<FrameId>('none');
@@ -141,71 +174,74 @@ class Store {
 		Object.assign(this, load());
 	}
 
-	/** The card shown in the text box. Always a text card. */
-	get selected(): Card {
-		return this.cards.find((c) => c.id === this.selectedId) ?? this.cards.find((c) => !c.drawing)!;
-	}
-
 	/** The sign's text and background colors, from a preset or the custom color. */
 	get colors(): { fg: string; bg: string } {
 		if (this.color === 'custom') return { fg: this.customColor, bg: '#000000' };
 		return COLORS.find((c) => c.id === this.color) ?? COLORS[0];
 	}
 
-	/** Cards that have something to show. */
-	get playable(): Card[] {
-		return this.cards.filter(hasContent);
+	/** The entries switched on, in list order. */
+	get playlist(): Entry[] {
+		return this.entries.filter((e) => e.on);
 	}
 
-	select(id: string) {
-		this.selectedId = id;
-		this.prune();
+	/** The saved message being edited in the text box, if any. */
+	get editing(): Entry | undefined {
+		return this.entries.find((e) => e.id === this.editingId);
 	}
 
-	/** Puts a fresh, empty card in the text box. */
-	add(text = '') {
-		this.prune();
-		if (clean(this.selected.text) === '') {
-			this.selected.text = text;
-			return;
+	/**
+	 * Keeps the message in the text box, as it is played. When editing a saved message it
+	 * replaces that one; otherwise it goes at the top, unless the same message is already saved.
+	 */
+	record() {
+		const text = clean(this.draft);
+		if (!text) return;
+		const editing = this.editing;
+		if (editing) {
+			editing.text = text;
+		} else if (!this.entries.some((e) => !e.drawing && clean(e.text) === text)) {
+			this.entries.unshift(newEntry(text));
 		}
-		const card = newCard(text);
-		this.cards.push(card);
-		this.selectedId = card.id;
 	}
 
-	/** Saves a drawing: over the card with this id, or as a new card. */
+	/** Puts a saved message in the text box, to be changed and played again. */
+	edit(id: string) {
+		const entry = this.entries.find((e) => e.id === id);
+		if (!entry || entry.drawing) return;
+		this.draft = entry.text;
+		this.editingId = id;
+	}
+
+	/** Lets go of the saved message, keeping the text box as it is. */
+	stopEditing() {
+		this.editingId = null;
+	}
+
+	/** Saves a drawing: over the entry with this id, or as a new one at the top. */
 	saveDrawing(id: string | null, drawing: Drawing) {
-		const existing = this.cards.find((c) => c.id === id);
+		const existing = this.entries.find((e) => e.id === id);
 		if (existing) existing.drawing = drawing;
-		else this.cards.push({ ...newCard(), drawing });
+		else this.entries.unshift(newEntry('', drawing));
 	}
 
 	remove(id: string) {
-		const index = this.cards.findIndex((c) => c.id === id);
-		if (index === -1) return;
-		this.cards.splice(index, 1);
-		const texts = this.cards.filter((c) => !c.drawing);
-		if (texts.length === 0) {
-			const card = newCard();
-			this.cards.push(card);
-			this.selectedId = card.id;
-		} else if (this.selectedId === id) {
-			const after = this.cards.slice(index).find((c) => !c.drawing);
-			this.selectedId = (after ?? texts[texts.length - 1]).id;
-		}
+		this.entries = this.entries.filter((e) => e.id !== id);
+		if (this.editingId === id) this.editingId = null;
 	}
 
-	/** Drops abandoned empty cards, keeping the one in the text box. */
-	prune() {
-		const kept = this.cards.filter((c) => c.id === this.selectedId || hasContent(c));
-		if (kept.length !== this.cards.length) this.cards = kept;
+	/** Moves an entry to a new place in the list. */
+	move(from: number, to: number) {
+		if (from === to || to < 0 || to >= this.entries.length) return;
+		const [entry] = this.entries.splice(from, 1);
+		this.entries.splice(to, 0, entry);
 	}
 
 	save() {
 		const saved: Saved = {
-			cards: this.cards,
-			selectedId: this.selectedId,
+			draft: this.draft,
+			editingId: this.editingId,
+			entries: this.entries,
 			size: this.size,
 			look: this.look,
 			frame: this.frame,

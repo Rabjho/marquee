@@ -26,18 +26,19 @@ against a deployed build.
 | --------------------------------------- | --------------------------------------------------------------------- |
 | `src/routes/+layout.svelte`             | App shell: loads the global styles                                    |
 | `src/routes/+layout.ts`                 | Turns off server rendering; the app is one prerendered shell          |
-| `src/routes/+page.svelte`               | The editing screen: text box, Go, stickers, playlist, style presets   |
+| `src/routes/+page.svelte`               | The editing screen: text box, Go, stickers, saved list, style presets |
 | `src/lib/components/Stage.svelte`       | The playing screen: full screen, rotation, tap to stop                |
 | `src/lib/components/Sign.svelte`        | The sign surface, shared by the stage and the preview                 |
 | `src/lib/renderer.ts`                   | Draws the sign on a canvas: scrolling, looks, frames, blinking, HDR   |
 | `src/lib/font5x7.ts`                    | The dot-matrix font used by the LED and ASCII looks                   |
 | `src/lib/drawing.ts`                    | Stroke format for drawings, and trimming them to their content        |
+| `src/lib/components/SavedList.svelte`   | Saved messages and drawings: tick for the playlist, arrange, edit     |
 | `src/lib/components/Preview.svelte`     | The miniature sign next to the style options                          |
 | `src/lib/components/Choice.svelte`      | Preset picker: a row of big radio buttons                             |
 | `src/lib/components/Slider.svelte`      | Range slider with named ends, for speed and similar settings          |
 | `src/lib/components/DrawingPad.svelte`  | Finger drawing: one brush, a few inks, undo, clear                    |
 | `src/lib/components/DrawingView.svelte` | Renders a stored drawing at any size                                  |
-| `src/lib/store.svelte.ts`               | Messages and settings, saved to `localStorage`                        |
+| `src/lib/store.svelte.ts`               | Text box, saved list and settings, kept in `localStorage`             |
 | `src/lib/shake.svelte.ts`               | Shake detection and the iOS motion permission                         |
 | `src/lib/wakelock.ts`                   | Keeps the screen on while the sign plays                              |
 | `src/lib/presets.ts`                    | Sizes, looks, frames, colors, blink styles, slider ranges, stickers   |
@@ -66,13 +67,6 @@ magick -background black -density 300 static/favicon.svg -resize 180x180 static/
 node scripts/icon.svg.mjs 0.72 > /tmp/maskable.svg
 magick -background black -density 300 /tmp/maskable.svg -resize 512x512 static/icon-maskable-512.png
 ```
-
-## To do
-
-- Rework how the playlist and drawings fit into the editing screen. Both work, but the
-  setup is not right yet: the text box doubles as "the selected playlist card", and
-  drawings sit in the same list while behaving differently.
-- Some way to save old banners and add to a playlist locally?
 
 ## HDR assets
 
