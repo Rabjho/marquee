@@ -39,12 +39,14 @@
 		style:background="conic-gradient(#ff2a2a, #ffe600, #39ff14, #00e5ff, #3b6bff, #ff2fd0, #ff2a2a)"
 		aria-hidden="true"
 	>
+		<!-- Selected: the ring around a ✓ on the tile's background, like the presets' ✓.
+		     Otherwise: the ring around the custom color. -->
 		<span
 			class="flex size-full items-center justify-center rounded-full text-lg font-black"
-			style:background-color={value}
-			style:color={value}
+			style:background-color={selected ? background : value}
+			style:color={background === '#000000' ? '#ffffff' : '#000000'}
 		>
-			{#if selected}<span class="rounded-full bg-bg px-1 text-fg">✓</span>{/if}
+			{#if selected}✓{/if}
 		</span>
 	</span>
 </label>
