@@ -404,16 +404,25 @@ export class SignRenderer {
 				};
 
 		let x = 0;
+		/** How far past its cell the ASCII picture is, as a share of a cell. */
+		let glide = 0;
 		let layout: Layout | null = null;
 		if (this.#item) {
 			layout = this.#measure(grid ? this.#gridCtx : ctx, mode);
 			x = this.#position(layout, mode.viewWidth, dt);
-			if (grid) x = Math.round(x / mode.snap) * mode.snap;
+			if (grid) {
+				// Dots step a whole cell at a time, like a real sign. ASCII blocks are drawn as
+				// shapes, so they glide: the picture is built on whole cells and then slid on
+				// by what is left over.
+				const snapped = (s.look === 'ascii' ? Math.floor : Math.round)(x / mode.snap) * mode.snap;
+				glide = (x - snapped) / mode.snap;
+				x = snapped;
+			}
 		}
 
 		// Skip the work when nothing visible has changed since the last frame.
 		const moving = !grid && show && this.#scrolls && !this.#still && !this.#ended;
-		const key = [x, show, flood, ink, ground, chase, stripes, frameOn, width, height].join();
+		const key = [x, glide, show, flood, ink, ground, chase, stripes, frameOn, width, height].join();
 		if (!moving && key === this.#lastKey) return;
 		this.#lastKey = key;
 
@@ -440,7 +449,7 @@ export class SignRenderer {
 		ctx.clip();
 		ctx.translate(margin, margin);
 		if (grid) {
-			this.#paintGrid(ctx, show ? layout : null, x, mode, columns, rows, cellWidth, cellHeight, ink);
+			this.#paintGrid(ctx, show ? layout : null, x, glide, mode, columns, rows, cellWidth, cellHeight, ink);
 		} else if (show && layout) {
 			this.#paintItem(ctx, layout, x, mode, ink);
 		}
@@ -457,6 +466,7 @@ export class SignRenderer {
 		ctx: CanvasRenderingContext2D,
 		layout: Layout | null,
 		x: number,
+		glide: number,
 		mode: Mode,
 		columns: number,
 		rows: number,
@@ -465,6 +475,11 @@ export class SignRenderer {
 		ink: Paint
 	) {
 		const look = this.#settings.look;
+		// ASCII slides right by up to a cell, so it is built one cell wider, starting a cell early.
+		if (look === 'ascii') {
+			columns += 1;
+			x += mode.snap;
+		}
 		const lit: [number, number, string | null][] = [];
 
 		if (layout) {
@@ -511,7 +526,10 @@ export class SignRenderer {
 		}
 
 		if (look === 'ascii') {
+			ctx.save();
+			ctx.translate((glide - 1) * cellWidth, 0);
 			this.#paintAscii(ctx, lit, columns, rows, cellWidth, cellHeight, ink);
+			ctx.restore();
 			return;
 		}
 
