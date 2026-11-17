@@ -109,7 +109,8 @@
 
 	const goLabel = $derived.by(() => {
 		const count = store.lineup.length;
-		if (count === 0 || (count === 1 && store.current)) return `Go: show this ${store.mode === 'draw' ? 'drawing' : 'message'}`;
+		if (count === 0) return `Go: nothing to show yet, ${store.mode === 'draw' ? 'draw something' : 'type a message'} first`;
+		if (count === 1 && store.current) return `Go: show this ${store.mode === 'draw' ? 'drawing' : 'message'}`;
 		return `Go: play the playlist, ${count} ${count === 1 ? 'entry' : 'entries'}`;
 	});
 
@@ -164,15 +165,18 @@
 <!-- A shared link opened while the app is already showing only changes the hash. -->
 <svelte:window onhashchange={readSharedLink} />
 
-<main class="mx-auto flex w-full max-w-md flex-col gap-8 px-4 pt-4 pb-12" inert={playing !== null}>
+<main
+	class="mx-auto flex w-full max-w-md flex-col gap-8 px-4 pt-[calc(1rem+env(safe-area-inset-top))] pb-[calc(3rem+env(safe-area-inset-bottom))]"
+	inert={playing !== null}>
 	<h1 class="sr-only">Marquee</h1>
 
 	<!-- What Go will play, pinned to the top so every change shows in it while scrolling.
-	     With nothing to play, an empty text box shows the placeholder and an empty pad a blank sign. -->
+	     It shows only that: with nothing to play, the sign is blank. In the installed app the
+	     page runs up under the status bar, so the preview keeps clear of the notch or island. -->
 	{#if !playing}
-		<div class="sticky top-0 z-10 -mx-4 -mt-4 -mb-4 bg-bg px-4 pt-4 pb-2">
+		<div class="sticky top-0 z-10 -mx-4 -mt-[calc(1rem+env(safe-area-inset-top))] -mb-4 bg-bg px-4 pt-[calc(1rem+env(safe-area-inset-top))] pb-2">
 			<Preview
-				items={store.lineup.length || store.mode === 'draw' ? store.lineup : [{ text: 'TAXI PLEASE' }]}
+				items={store.lineup}
 				blinking={previewBlinking}
 			/>
 		</div>
@@ -216,9 +220,9 @@
 						id="message"
 						bind:value={store.draft}
 						{@attach noUndo}
-						class="w-full resize-none rounded-lg border border-line-strong bg-surface p-4 text-2xl font-semibold placeholder:text-fg-muted"
+						class="w-full resize-none rounded-lg border border-line-strong bg-surface p-4 text-2xl font-semibold placeholder:font-normal placeholder:text-fg-muted"
 						rows="2"
-						placeholder="TAXI PLEASE"
+						placeholder="Type a message"
 						enterkeyhint="go"
 						autocapitalize="characters"
 						autocomplete="off"
@@ -244,8 +248,9 @@
 
 		<button
 			bind:this={goButton}
-			class="min-h-24 cursor-pointer rounded-lg bg-brand text-4xl font-black text-on-brand hover:bg-brand-hover active:bg-brand-hover"
+			class="min-h-24 cursor-pointer rounded-lg bg-brand text-4xl font-black text-on-brand hover:bg-brand-hover active:bg-brand-hover aria-disabled:cursor-default aria-disabled:opacity-40 aria-disabled:hover:bg-brand aria-disabled:active:bg-brand"
 			aria-label={goLabel}
+			aria-disabled={store.lineup.length === 0}
 		>
 			Go
 		</button>

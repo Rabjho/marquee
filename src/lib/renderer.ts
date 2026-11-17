@@ -729,8 +729,8 @@ export class SignRenderer {
 	}
 
 	/**
-	 * A band of slanted stripes round the edge, like a barber pole, travelling clockwise.
-	 * `phase` is how far they have moved, in stripe widths (0 to 1).
+	 * A rounded track round the edge with even stripes chasing clockwise along it, like the
+	 * lights round a marquee. `phase` is how far they have moved, in stripes (0 to 1).
 	 */
 	#paintStripes(
 		ctx: CanvasRenderingContext2D,
@@ -740,48 +740,28 @@ export class SignRenderer {
 		phase: number,
 		ink: Paint
 	) {
-		const period = margin * 2;
-		// Each edge is drawn along its own x axis, clockwise, with y running inward. The
-		// stripes are placed by distance round the perimeter, so they meet up at the corners.
-		const edges: [number, number, number, number][] = [
-			[0, 0, 0, width],
-			[width, 0, 0.5, height],
-			[width, height, 1, width],
-			[0, height, 1.5, height]
-		];
-		let start = 0;
-		for (const [ox, oy, turns, length] of edges) {
-			const m = new DOMMatrix().translate(ox, oy).rotate(turns * 180);
-			const band = new Path2D();
-			band.moveTo(0, 0);
-			band.lineTo(length, 0);
-			band.lineTo(length - margin, margin);
-			band.lineTo(margin, margin);
-			band.closePath();
-			ctx.save();
-			ctx.setTransform(ctx.getTransform().multiply(m));
-			ctx.clip(band);
-			const shift = (((start - phase * period) % period) + period) % period;
-			const edge = new Path2D();
-			for (let x = -shift - period; x < length + period; x += period) {
-				// Leaning back, so they seem to roll forward as they move.
-				edge.moveTo(x, 0);
-				edge.lineTo(x + period / 2, 0);
-				edge.lineTo(x + period / 2 - margin, margin);
-				edge.lineTo(x - margin, margin);
-				edge.closePath();
-			}
-			// Faint fill between the stripes, like the unlit bulbs.
-			ctx.globalCompositeOperation = 'source-over';
-			ctx.globalAlpha = 0.22;
-			ctx.fillStyle = ink === HDR ? '#fff' : ink;
-			ctx.fill(band);
-			ctx.globalAlpha = 1;
-			this.#use(ctx, ink);
-			ctx.fill(edge);
-			ctx.restore();
-			start += length;
-		}
+		const inset = margin / 2;
+		const w = width - margin;
+		const h = height - margin;
+		const radius = Math.min(margin * 1.2, w / 2, h / 2);
+		// A whole number of stripes fits the length of the track, so there is no seam.
+		const length = 2 * (w + h) - 8 * radius + 2 * Math.PI * radius;
+		const period = length / Math.max(4, Math.round(length / (margin * 1.8)));
+		const track = new Path2D();
+		track.roundRect(inset, inset, w, h, radius);
+
+		ctx.save();
+		ctx.lineWidth = margin * 0.5;
+		ctx.lineCap = 'butt';
 		ctx.globalCompositeOperation = 'source-over';
+		ctx.globalAlpha = 0.22;
+		ctx.strokeStyle = ink === HDR ? '#fff' : ink;
+		ctx.stroke(track);
+		ctx.globalAlpha = 1;
+		ctx.setLineDash([period / 2, period / 2]);
+		ctx.lineDashOffset = -phase * period;
+		this.#use(ctx, ink);
+		ctx.stroke(track);
+		ctx.restore();
 	}
 }
