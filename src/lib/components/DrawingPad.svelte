@@ -1,17 +1,13 @@
 <script lang="ts">
-	// Finger drawing with the bare minimum: one brush, the color picker as the pen, undo and clear.
+	// Finger drawing with the bare minimum: one brush, undo and clear. The color picker below
+	// the pad is the pen.
 	// The drawing is a long strip. The pad shows one stretch of it; two fingers drag it along,
 	// and it scrolls by itself while a stroke is held near either edge.
 	// What is drawn goes straight into the store, where Go picks it up.
-	import type { Snippet } from 'svelte';
 	import { pathData, type Stroke } from '../drawing';
 	import { DRAWING } from '../presets';
 	import { store } from '../store.svelte';
 	import { secondary } from '../ui';
-	import ColorPicker from './ColorPicker.svelte';
-
-	/** Shown between the pad's tools: the Go button. */
-	let { children }: { children: Snippet } = $props();
 
 	/** How far one press of an arrow key moves along the strip. */
 	const STEP = DRAWING.view / 4;
@@ -164,7 +160,7 @@
 		class="aspect-3/2 w-full cursor-crosshair touch-none rounded-lg border border-line-strong"
 		viewBox="{offset} 0 {DRAWING.view} {DRAWING.height}"
 		style:background-color={sign.bg}
-		style:color={sign.fg}
+		style:color={store.base}
 		fill="none"
 		stroke-width={DRAWING.brush}
 		stroke-linecap="round"
@@ -193,7 +189,7 @@
 			class="h-12 w-full cursor-grab touch-none rounded-lg bg-surface active:cursor-grabbing"
 			viewBox="0 0 {span} {DRAWING.height}"
 			preserveAspectRatio="xMinYMid meet"
-			style:color={sign.fg}
+			style:color={store.base}
 			fill="none"
 			stroke-width={DRAWING.brush}
 			stroke-linecap="round"
@@ -221,8 +217,6 @@
 		<p class="text-fg-muted">For more room, drag this strip or the pad with two fingers.</p>
 	</div>
 
-	<ColorPicker />
-
 	<div class="grid grid-cols-2 gap-2">
 		<button type="button" class={secondary} disabled={store.sketch.length === 0} onclick={() => store.sketch.pop()}>
 			Undo
@@ -231,6 +225,4 @@
 			Clear
 		</button>
 	</div>
-
-	{@render children()}
 </div>

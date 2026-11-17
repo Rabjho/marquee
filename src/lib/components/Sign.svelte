@@ -37,7 +37,8 @@
 
 	const color = $derived(store.colors);
 	const settings = $derived<Settings>({
-		fg: color.fg,
+		// A drawing's plain strokes are white or black; its colored strokes carry their own color.
+		fg: item?.drawing ? store.base : color.fg,
 		bg: color.bg,
 		scale: (SIZES.find((s) => s.id === store.size) ?? SIZES[0]).scale,
 		speed: store.speed,

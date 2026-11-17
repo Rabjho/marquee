@@ -196,8 +196,16 @@ class Store {
 	}
 
 	/**
-	 * The color a new stroke is drawn in. White and black on white draw in the sign's own
-	 * color (null), so switching between them swaps black and white across the drawing.
+	 * What a drawing's plain strokes show in: white on a black sign, black on a white one.
+	 * The text color never touches a drawing.
+	 */
+	get base(): string {
+		return this.colors.bg === '#000000' ? '#ffffff' : '#000000';
+	}
+
+	/**
+	 * The color a new stroke is drawn in. White and black on white draw plain strokes (null),
+	 * which take `base`, so switching between them swaps black and white across the drawing.
 	 */
 	get pen(): string | null {
 		return this.hdr || this.color === 'white' || this.color === 'paper' ? null : this.colors.fg;

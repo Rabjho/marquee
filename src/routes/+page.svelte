@@ -220,14 +220,20 @@
 			{:else}
 				<!-- A fresh pad for each saved drawing, so it starts at the beginning of the strip. -->
 				{#key store.editingId}
-					<DrawingPad>{@render goButton()}</DrawingPad>
+					<DrawingPad />
 				{/key}
 			{/if}
 		</div>
 
-		{#if store.mode === 'text'}
-			{@render goButton()}
-		{/if}
+		<!-- The one color setting: the text color, or the pen while drawing. -->
+		<ColorPicker />
+
+		<button
+			class="min-h-24 cursor-pointer rounded-lg bg-brand text-4xl font-black text-on-brand hover:bg-brand-hover active:bg-brand-hover"
+			aria-label="Go: show this {kind}"
+		>
+			Go
+		</button>
 
 		<!-- A link can only carry text. -->
 		{#if store.mode === 'text'}
@@ -270,15 +276,6 @@
 		{/if}
 	</form>
 
-	{#snippet goButton()}
-		<button
-			class="min-h-24 cursor-pointer rounded-lg bg-brand text-4xl font-black text-on-brand hover:bg-brand-hover active:bg-brand-hover"
-			aria-label="Go: show this {kind}"
-		>
-			Go
-		</button>
-	{/snippet}
-
 	{#if store.mode === 'text'}
 		<section class="flex flex-col gap-2">
 			<h2 class={label}>Stickers</h2>
@@ -310,10 +307,6 @@
 		<Choice legend="Look" name="look" options={LOOKS} bind:value={store.look} />
 		<Choice legend="Frame" name="frame" options={FRAMES} bind:value={store.frame} />
 
-		<!-- In draw mode the color picker is the pen, by the pad. -->
-		{#if store.mode === 'text'}
-			<ColorPicker />
-		{/if}
 
 		<Choice
 			legend="Extra bright"
