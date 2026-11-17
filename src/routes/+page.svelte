@@ -20,6 +20,7 @@
 	} from '../lib/presets';
 	import { shake } from '../lib/shake.svelte';
 	import { clean, hasContent, HDR_COLORS, store, toItem, type Entry, type Item } from '../lib/store.svelte';
+	import { noUndo } from '../lib/noUndo';
 	import { label, secondary, textButton } from '../lib/ui';
 
 	/** What is on the sign right now, or null while editing. */
@@ -31,8 +32,8 @@
 	let qrcode = $state.raw<typeof import('qrcode-generator') | null>(null);
 	/** The text box, while in text mode. */
 	let input = $state<HTMLTextAreaElement>();
-	/** Bumped on every Go, which replaces the text box with a fresh one. See `play`. */
-	let textBoxKey = $state(0);
+	/** Bumped on every play, which gives the drawing pad a fresh start. */
+	let playCount = $state(0);
 	let previewBlinking = $state(false);
 	let previewBlinkTimer: ReturnType<typeof setTimeout>;
 
@@ -74,9 +75,7 @@
 		// Asked from inside the tap, as iOS requires for the motion permission prompt.
 		shake.start();
 		notice = '';
-		// iOS offers "Undo Typing" when the phone is shaken and a text box has typing to undo.
-		// A page cannot switch that off, so the text box is swapped for a fresh one with no history.
-		textBoxKey++;
+		playCount++;
 		playing = items;
 	}
 
@@ -214,17 +213,18 @@
 				</div>
 			{/if}
 			{#if store.mode === 'text'}
-				{#key textBoxKey}
 					<textarea
 						id="message"
 						bind:this={input}
 						bind:value={store.draft}
+						{@attach noUndo}
 						class="w-full resize-none rounded-lg border border-line-strong bg-surface p-4 text-2xl font-semibold placeholder:text-fg-muted"
 						rows="2"
 						placeholder="TAXI PLEASE"
 						enterkeyhint="go"
 						autocapitalize="characters"
 						autocomplete="off"
+						spellcheck="false"
 						dir="auto"
 						onkeydown={(event) => {
 							if (event.key === 'Enter' && !event.isComposing) {
@@ -233,10 +233,9 @@
 							}
 						}}
 					></textarea>
-				{/key}
 			{:else}
 				<!-- A fresh pad for each saved drawing and after each Go, so it starts at the beginning of the strip. -->
-				{#key `${store.editingId}:${textBoxKey}`}
+				{#key `${store.editingId}:${playCount}`}
 					<DrawingPad />
 				{/key}
 			{/if}
