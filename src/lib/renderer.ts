@@ -802,19 +802,10 @@ export class SignRenderer {
 		const track = new Path2D();
 		track.roundRect(inset, inset, w, h, radius);
 
-		// Two thin rails hold the stripes; between the stripes is plain background.
-		const band = margin * 0.6;
-		const rail = Math.max(1, margin * 0.07);
+		// Just the stripes: between them is plain background.
 		ctx.save();
 		this.#use(ctx, ink);
-		ctx.lineWidth = rail;
-		for (const side of [-1, 1]) {
-			const r = new Path2D();
-			const o = side * (band - rail) / 2;
-			r.roundRect(inset - o, inset - o, w + o * 2, h + o * 2, radius + o);
-			ctx.stroke(r);
-		}
-		ctx.lineWidth = band;
+		ctx.lineWidth = margin * 0.6;
 		ctx.lineCap = 'butt';
 		ctx.setLineDash([period / 2, period / 2]);
 		ctx.lineDashOffset = -phase * period;
