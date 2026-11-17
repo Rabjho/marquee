@@ -31,6 +31,9 @@
 	const fingers = new Map<number, number>();
 	/** Two fingers move the strip; it stays that way until every finger has lifted. */
 	let panning = false;
+	let minimap: SVGSVGElement;
+	/** Strip units per screen pixel in the miniature, fixed while a finger slides along it. */
+	let minimapScale = 0;
 
 	const sign = $derived(store.colors);
 	const inkColor = $derived(
@@ -88,6 +91,20 @@
 		panning = false;
 	}
 
+	/** Centres the pad on the spot under the finger in the miniature strip. */
+	function jump(event: PointerEvent) {
+		const x = (event.clientX - minimap.getBoundingClientRect().left) * minimapScale;
+		offset = Math.min(Math.max(x - DRAWING.view / 2, 0), length - DRAWING.view);
+	}
+
+	function minimapStart(event: PointerEvent) {
+		minimap.setPointerCapture(event.pointerId);
+		// The miniature is fitted by height or width, whichever runs out first ("meet").
+		const box = minimap.getBoundingClientRect();
+		minimapScale = Math.max(length / box.width, DRAWING.height / box.height);
+		jump(event);
+	}
+
 	/** Arrow keys move the strip too, for when there is no touch screen. */
 	function key(event: KeyboardEvent) {
 		if (event.key === 'ArrowRight') pan(STEP);
@@ -139,8 +156,10 @@
 
 		<!-- The whole strip in miniature, with the stretch shown above marked on it. -->
 		<div class="flex flex-col gap-2">
+			<!-- Pressing or sliding along it moves the pad; the arrow keys do the same on the canvas. -->
 			<svg
-				class="h-10 w-full rounded-lg bg-surface"
+				bind:this={minimap}
+				class="h-12 w-full cursor-pointer touch-none rounded-lg bg-surface"
 				viewBox="0 0 {length} {DRAWING.height}"
 				preserveAspectRatio="xMinYMid meet"
 				style:color={sign.fg}
@@ -149,6 +168,8 @@
 				stroke-linecap="round"
 				stroke-linejoin="round"
 				aria-hidden="true"
+				onpointerdown={minimapStart}
+				onpointermove={(event) => minimap.hasPointerCapture(event.pointerId) && jump(event)}
 			>
 				<rect width={length} height={DRAWING.height} fill={sign.bg} stroke="none" />
 				{#each all as stroke, i (i)}
@@ -164,7 +185,7 @@
 					stroke-linecap="butt"
 				/>
 			</svg>
-			<p class="text-fg-muted">Drag with two fingers for more room.</p>
+			<p class="text-fg-muted">Drag with two fingers for more room, or slide along the strip to move.</p>
 		</div>
 
 		<fieldset>

@@ -72,7 +72,6 @@ magick -background black -density 300 /tmp/maskable.svg -resize 512x512 static/i
 - Rework how the playlist and drawings fit into the editing screen. Both work, but the
   setup is not right yet: the text box doubles as "the selected playlist card", and
   drawings sit in the same list while behaving differently.
-- Make scrolling in drawing mode nicer i.e. preview should be pressable
 - Some way to save old banners and add to a playlist locally?
 - Shaking should be a toggle for the blinking/strobe.
 
