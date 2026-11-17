@@ -1,6 +1,6 @@
 <script lang="ts">
 	// Every message and drawing that has been played, in one list, newest first. Tapping +
-	// adds an entry to the playlist, which plays in the order the entries were added.
+	// adds an entry to the playlist, which Go plays in the order the entries were added.
 	// Delete mode swaps the edit buttons for delete buttons and offers to clear everything.
 	import { clean, store, type Entry } from '../store.svelte';
 	import { label as heading, secondary, textButton } from '../ui';
@@ -47,30 +47,22 @@
 		{/if}
 	</div>
 
-	<!-- Always shown, so the playlist is there to be found before anything is in it. -->
-	<div class="flex gap-2">
-		<button
-			class="{secondary} flex-1"
-			disabled={store.playlist.length === 0}
-			onclick={() => onplay(store.playlist)}
-		>
-			▶ Play playlist{store.playlist.length ? ` (${store.playlist.length})` : ''}
-		</button>
-		<button
-			class={secondary}
-			aria-label="Clear playlist"
-			disabled={store.playlist.length === 0}
-			onclick={() => store.clearPlaylist()}
-		>
-			Clear
-		</button>
-	</div>
-
 	{#if store.entries.length === 0}
 		<p class="text-fg-muted">
-			Messages and drawings you show are kept here. Tap + on them to build a playlist; it plays in the
-			order you tap.
+			Messages and drawings you show are kept here. Tap + on them to build a playlist: Go then plays
+			them in the order you tapped, with what you are editing.
 		</p>
+	{:else if store.playlist.length > 0}
+		<div class="flex items-center justify-between gap-2">
+			<p class="text-fg-muted">
+				Go plays {store.playlist.length} from here{store.lineup.length > store.playlist.length
+					? ', then what you are editing'
+					: ''}.
+			</p>
+			<button type="button" class={secondary} aria-label="Clear playlist" onclick={() => store.clearPlaylist()}>
+				Clear
+			</button>
+		</div>
 	{/if}
 
 	<ul class="flex flex-col gap-2">

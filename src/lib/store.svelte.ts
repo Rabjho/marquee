@@ -168,6 +168,10 @@ export const HDR_COLORS: SignColorId[] = ['white', 'paper'];
 /** Two drawings are the same when their strokes are. */
 const sameDrawing = (a: Drawing, b: Drawing) => JSON.stringify(a.strokes) === JSON.stringify(b.strokes);
 
+/** Two items are the same message, or the same drawing. */
+const sameItem = (a: Item, b: Item) =>
+	a.drawing && b.drawing ? sameDrawing(a.drawing, b.drawing) : !a.drawing && !b.drawing && a.text === b.text;
+
 class Store {
 	mode = $state<Mode>('text');
 	draft = $state('');
@@ -219,6 +223,18 @@ class Store {
 	/** The playlist, in the order its entries were added. */
 	get playlist(): Entry[] {
 		return this.playlistIds.flatMap((id) => this.entries.find((e) => e.id === id) ?? []);
+	}
+
+	/**
+	 * What Go plays and the preview shows: the playlist, with what is in the text box or on
+	 * the pad in it too. A saved entry being edited plays in its own place, with the changes;
+	 * anything else being edited plays last. With no playlist, that is just the one item.
+	 */
+	get lineup(): Item[] {
+		const current = this.current;
+		const items = this.playlist.map((e) => (current && e.id === this.editingId ? current : toItem(e)));
+		if (current && !items.some((item) => sameItem(item, current))) items.push(current);
+		return items;
 	}
 
 	/** An entry's place in the playlist, from 1, or 0 when it is not in it. */

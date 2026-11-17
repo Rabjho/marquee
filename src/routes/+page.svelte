@@ -80,14 +80,14 @@
 		playing = items;
 	}
 
-	/** Shows the text box or the drawing, and keeps it in the saved list. */
+	/** Plays the playlist with what is being edited in it, and keeps that in the saved list. */
 	function go() {
-		const item = store.current;
-		if (!item) {
+		const items = store.lineup;
+		if (items.length === 0) {
 			input?.focus();
 			return;
 		}
-		play([item]);
+		play(items);
 		store.record();
 		// Done with the saved entry: what comes next is a new one.
 		store.stopEditing();
@@ -107,7 +107,11 @@
 		input?.focus({ preventScroll: true });
 	}
 
-	const kind = $derived(store.mode === 'draw' ? 'drawing' : 'message');
+	const goLabel = $derived(
+		store.lineup.length > 1
+			? `Go: play the playlist, ${store.lineup.length} entries`
+			: `Go: show this ${store.mode === 'draw' ? 'drawing' : 'message'}`
+	);
 
 	/** The link that carries the message in the text box, as /#t=HELLO. */
 	const shareUrl = $derived.by(() => {
@@ -163,12 +167,12 @@
 <main class="mx-auto flex w-full max-w-md flex-col gap-8 px-4 pt-4 pb-12" inert={playing !== null}>
 	<h1 class="sr-only">Marquee</h1>
 
-	<!-- The sign as it will look, pinned to the top so every change shows in it while scrolling.
-	     An empty drawing pad shows a blank sign; an empty text box shows the placeholder. -->
+	<!-- What Go will play, pinned to the top so every change shows in it while scrolling.
+	     With nothing to play, an empty text box shows the placeholder and an empty pad a blank sign. -->
 	{#if !playing}
 		<div class="sticky top-0 z-10 -mx-4 -mt-4 -mb-4 bg-bg px-4 pt-4 pb-2">
 			<Preview
-				item={store.current ?? (store.mode === 'text' ? { text: 'TAXI PLEASE' } : null)}
+				items={store.lineup.length || store.mode === 'draw' ? store.lineup : [{ text: 'TAXI PLEASE' }]}
 				blinking={previewBlinking}
 			/>
 		</div>
@@ -241,7 +245,7 @@
 
 		<button
 			class="min-h-24 cursor-pointer rounded-lg bg-brand text-4xl font-black text-on-brand hover:bg-brand-hover active:bg-brand-hover"
-			aria-label="Go: show this {kind}"
+			aria-label={goLabel}
 		>
 			Go
 		</button>

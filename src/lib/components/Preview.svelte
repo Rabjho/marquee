@@ -4,7 +4,11 @@
 	import type { Item } from '../store.svelte';
 	import Sign from './Sign.svelte';
 
-	let { item, blinking }: { item: Item | null; blinking: boolean } = $props();
+	let { items, blinking }: { items: Item[]; blinking: boolean } = $props();
+
+	/** A playlist plays through, one entry after another, like on the sign. */
+	let index = $state(0);
+	const item = $derived(items.length ? items[index % items.length] : null);
 
 	let width = $state(0);
 
@@ -18,6 +22,6 @@
 	aria-hidden="true"
 >
 	{#if width}
-		<Sign {item} {width} height={Math.round(width / ratio)} {blinking} still={reducedMotion} />
+		<Sign {item} loop={items.length < 2} onend={() => index++} {width} height={Math.round(width / ratio)} {blinking} still={reducedMotion} />
 	{/if}
 </div>
