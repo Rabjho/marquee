@@ -366,23 +366,38 @@ export class SignRenderer {
 		// The frame keeps its own beat, so it can blink while the message stands still.
 		const frameOn = !s.frameBlink || ((time / 1000) * s.blinkRate) % 1 >= 0.5;
 
-		// The frame takes a margin; the message lives in the rectangle inside it.
-		const share = { none: 0, line: 0.07, bulbs: 0.1, stripes: 0.08 }[s.frame];
-		const margin = Math.round(height * share);
-		const innerWidth = width - margin * 2;
-		const innerHeight = height - margin * 2;
-		const chase = s.frame === 'bulbs' ? Math.floor((time / 1000) * CHASE_HZ) % 3 : 0;
-		const stripes = s.frame === 'stripes' && frameOn ? ((time / 1000) * STRIPE_HZ) % 1 : 0;
-
 		// In the dot looks the message is laid out on a coarse grid of font dots. An ASCII
 		// character is half as wide as it is tall, so there each dot is two cells wide.
 		// Drawings are always shown as drawn: the looks are for lettering.
 		const grid = s.look !== 'smooth' && !this.#item?.drawing;
 		const rows = rowsFor(GLYPH_HEIGHT, s.scale);
-		const cellHeight = innerHeight / rows;
 		const perDot = s.look === 'ascii' ? 2 : 1;
+		// With circles or pixels, bulbs are the outer ring of the same panel of dots: same
+		// spacing, size and shape, lined up with the message's dots.
+		const ring = grid && s.frame === 'bulbs' && s.look !== 'ascii';
+
+		// The frame takes a margin; the message lives in the rectangle inside it.
+		let marginX: number;
+		let marginY: number;
+		let columns: number;
+		let cellHeight: number;
+		if (ring) {
+			cellHeight = height / (rows + 2);
+			columns = Math.floor(width / cellHeight) - 2;
+			marginY = cellHeight;
+			marginX = (width - columns * cellHeight) / 2;
+		} else {
+			const share = { none: 0, line: 0.07, bulbs: 0.1, stripes: 0.08 }[s.frame];
+			marginX = marginY = Math.round(height * share);
+			cellHeight = (height - marginY * 2) / rows;
+			columns = Math.ceil((width - marginX * 2) / (cellHeight / perDot));
+		}
+		const margin = marginY;
+		const innerWidth = width - marginX * 2;
+		const innerHeight = height - marginY * 2;
 		const cellWidth = cellHeight / perDot;
-		const columns = Math.ceil(innerWidth / cellWidth);
+		const chase = s.frame === 'bulbs' ? Math.floor((time / 1000) * CHASE_HZ) % 3 : 0;
+		const stripes = s.frame === 'stripes' && frameOn ? ((time / 1000) * STRIPE_HZ) % 1 : 0;
 		const mode: Mode = grid
 			? {
 					viewWidth: columns / perDot,
@@ -441,13 +456,14 @@ export class SignRenderer {
 			ctx.fillRect(0, 0, width, height);
 		}
 
-		if (frameOn) this.#paintFrame(ctx, width, height, margin, chase, stripes, ink);
+		if (ring) this.#paintRing(ctx, columns + 2, rows + 2, marginX - cellHeight, cellHeight, frameOn ? chase : -1, ink);
+		else if (frameOn) this.#paintFrame(ctx, width, height, margin, chase, stripes, ink);
 
 		ctx.save();
 		ctx.beginPath();
-		ctx.rect(margin, margin, innerWidth, innerHeight);
+		ctx.rect(marginX, marginY, innerWidth, innerHeight);
 		ctx.clip();
-		ctx.translate(margin, margin);
+		ctx.translate(marginX, marginY);
 		if (grid) {
 			this.#paintGrid(ctx, show ? layout : null, x, glide, mode, columns, rows, cellWidth, cellHeight, ink);
 		} else if (show && layout) {
@@ -533,19 +549,8 @@ export class SignRenderer {
 			return;
 		}
 
-		const round = look === 'led';
-		const cell = (path: Path2D, column: number, row: number) => {
-			const cx = (column + 0.5) * cellWidth;
-			const cy = (row + 0.5) * cellHeight;
-			if (round) {
-				const radius = cellHeight * 0.42;
-				path.moveTo(cx + radius, cy);
-				path.arc(cx, cy, radius, 0, Math.PI * 2);
-			} else {
-				const half = cellHeight * 0.44;
-				path.rect(cx - half, cy - half, half * 2, half * 2);
-			}
-		};
+		const cell = (path: Path2D, column: number, row: number) =>
+			this.#dot(path, (column + 0.5) * cellWidth, (row + 0.5) * cellHeight, cellHeight);
 
 		// Unlit dots glow faintly, as on a real sign. They never change, so they are drawn once.
 		const glow = ink === HDR ? '#fff' : ink;
@@ -672,6 +677,53 @@ export class SignRenderer {
 		}
 	}
 
+	/** One dot of the circles or pixels look, centred on (cx, cy) in a cell `size` across. */
+	#dot(path: Path2D, cx: number, cy: number, size: number) {
+		if (this.#settings.look === 'led') {
+			const radius = size * 0.42;
+			path.moveTo(cx + radius, cy);
+			path.arc(cx, cy, radius, 0, Math.PI * 2);
+		} else {
+			const half = size * 0.44;
+			path.rect(cx - half, cy - half, half * 2, half * 2);
+		}
+	}
+
+	/**
+	 * Bulbs as the outer ring of a panel `columns` × `rows` dots big, its left edge at `left`.
+	 * Every third bulb is lit and they chase round; `chase` -1 leaves them all unlit.
+	 */
+	#paintRing(
+		ctx: CanvasRenderingContext2D,
+		columns: number,
+		rows: number,
+		left: number,
+		size: number,
+		chase: number,
+		ink: Paint
+	) {
+		const ring: [number, number][] = [];
+		for (let c = 0; c < columns; c++) ring.push([c, 0]);
+		for (let r = 1; r < rows; r++) ring.push([columns - 1, r]);
+		for (let c = columns - 2; c >= 0; c--) ring.push([c, rows - 1]);
+		for (let r = rows - 2; r > 0; r--) ring.push([0, r]);
+		const lit = new Path2D();
+		const unlit = new Path2D();
+		ring.forEach(([c, r], i) => {
+			const path = chase >= 0 && (i + 3 - chase) % 3 === 0 ? lit : unlit;
+			this.#dot(path, left + (c + 0.5) * size, (r + 0.5) * size, size);
+		});
+		// Unlit bulbs glow like the unlit dots inside, so the two read as one panel.
+		ctx.globalCompositeOperation = 'source-over';
+		ctx.globalAlpha = 0.13;
+		ctx.fillStyle = ink === HDR ? '#fff' : ink;
+		ctx.fill(unlit);
+		ctx.globalAlpha = 1;
+		this.#use(ctx, ink);
+		ctx.fill(lit);
+		ctx.globalCompositeOperation = 'source-over';
+	}
+
 	#paintFrame(
 		ctx: CanvasRenderingContext2D,
 		width: number,
@@ -750,14 +802,20 @@ export class SignRenderer {
 		const track = new Path2D();
 		track.roundRect(inset, inset, w, h, radius);
 
+		// Two thin rails hold the stripes; between the stripes is plain background.
+		const band = margin * 0.6;
+		const rail = Math.max(1, margin * 0.07);
 		ctx.save();
-		ctx.lineWidth = margin * 0.5;
+		this.#use(ctx, ink);
+		ctx.lineWidth = rail;
+		for (const side of [-1, 1]) {
+			const r = new Path2D();
+			const o = side * (band - rail) / 2;
+			r.roundRect(inset - o, inset - o, w + o * 2, h + o * 2, radius + o);
+			ctx.stroke(r);
+		}
+		ctx.lineWidth = band;
 		ctx.lineCap = 'butt';
-		ctx.globalCompositeOperation = 'source-over';
-		ctx.globalAlpha = 0.22;
-		ctx.strokeStyle = ink === HDR ? '#fff' : ink;
-		ctx.stroke(track);
-		ctx.globalAlpha = 1;
 		ctx.setLineDash([period / 2, period / 2]);
 		ctx.lineDashOffset = -phase * period;
 		this.#use(ctx, ink);

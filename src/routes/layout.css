@@ -32,7 +32,7 @@ html {
 	color: var(--color-fg);
 	-webkit-text-size-adjust: 100%;
 	/* Keeps focused controls clear of the sticky sign preview. */
-	scroll-padding-top: calc(14rem + env(safe-area-inset-top));
+	scroll-padding-top: 14rem;
 }
 
 body {

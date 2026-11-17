@@ -166,15 +166,15 @@
 <svelte:window onhashchange={readSharedLink} />
 
 <main
-	class="mx-auto flex w-full max-w-md flex-col gap-8 px-4 pt-[calc(1rem+env(safe-area-inset-top))] pb-[calc(3rem+env(safe-area-inset-bottom))]"
+	class="mx-auto flex w-full max-w-md flex-col gap-8 px-4 pt-4 pb-[calc(3rem+env(safe-area-inset-bottom))]"
 	inert={playing !== null}>
 	<h1 class="sr-only">Marquee</h1>
 
 	<!-- What Go will play, pinned to the top so every change shows in it while scrolling.
-	     It shows only that: with nothing to play, the sign is blank. In the installed app the
-	     page runs up under the status bar, so the preview keeps clear of the notch or island. -->
+	     It shows only that: with nothing to play, the sign is blank. It runs edge to edge from
+	     the very top of the screen, and in the installed app on up behind the notch or island. -->
 	{#if !playing}
-		<div class="sticky top-0 z-10 -mx-4 -mt-[calc(1rem+env(safe-area-inset-top))] -mb-4 bg-bg px-4 pt-[calc(1rem+env(safe-area-inset-top))] pb-2">
+		<div class="sticky top-0 z-10 -mx-4 -mt-4 -mb-4 bg-bg pb-2">
 			<Preview
 				items={store.lineup}
 				blinking={previewBlinking}

@@ -17,7 +17,7 @@
 </script>
 
 <div
-	class="overflow-hidden rounded-lg border border-line-strong"
+	class="overflow-hidden rounded-b-lg border-b border-line-strong"
 	bind:clientWidth={width}
 	aria-hidden="true"
 >
