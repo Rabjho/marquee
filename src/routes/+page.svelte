@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { onMount, tick } from 'svelte';
 	import Choice from '../lib/components/Choice.svelte';
-	import CustomSwatch from '../lib/components/CustomSwatch.svelte';
+	import ColorPicker from '../lib/components/ColorPicker.svelte';
 	import DrawingPad from '../lib/components/DrawingPad.svelte';
 	import Preview from '../lib/components/Preview.svelte';
 	import SavedList from '../lib/components/SavedList.svelte';
@@ -11,7 +11,6 @@
 		BLINK_RATE,
 		blinkMs,
 		BLINKS,
-		COLORS,
 		DIRECTIONS,
 		FRAMES,
 		LOOKS,
@@ -21,6 +20,7 @@
 	} from '../lib/presets';
 	import { shake } from '../lib/shake.svelte';
 	import { clean, hasContent, HDR_COLORS, store, toItem, type Entry, type Item } from '../lib/store.svelte';
+	import { label, secondary, textButton } from '../lib/ui';
 
 	/** What is on the sign right now, or null while editing. */
 	let playing = $state<Item[] | null>(null);
@@ -155,9 +155,6 @@
 			if ((error as Error).name !== 'AbortError') notice = 'Could not share the link.';
 		}
 	}
-
-	const secondary =
-		'min-h-14 cursor-pointer rounded-lg border border-line-strong px-4 text-lg font-semibold active:bg-surface disabled:cursor-default disabled:opacity-40';
 </script>
 
 <!-- A shared link opened while the app is already showing only changes the hash. -->
@@ -173,47 +170,32 @@
 			go();
 		}}
 	>
-		<fieldset class="grid grid-cols-2 gap-2">
-			<legend class="sr-only">Show a message or a drawing</legend>
-			{#each [{ id: 'text', label: 'Text' }, { id: 'draw', label: 'Drawing' }] as const as option (option.id)}
-				<label
-					class="relative flex min-h-12 cursor-pointer items-center justify-center rounded-lg border border-line-strong bg-surface px-2 text-lg font-semibold has-checked:border-fg has-checked:bg-fg has-checked:text-bg has-focus-visible:outline-2 has-focus-visible:outline-offset-2 has-focus-visible:outline-focus"
-				>
-					<input
-						class="absolute inset-0 cursor-pointer opacity-0"
-						type="radio"
-						name="mode"
-						value={option.id}
-						checked={store.mode === option.id}
-						onchange={() => store.setMode(option.id)}
-					/>
-					{option.label}
-				</label>
-			{/each}
-		</fieldset>
+		<Choice
+			legend="Show a message or a drawing"
+			hideLegend
+			name="mode"
+			options={[
+				{ id: 'text', label: 'Text' },
+				{ id: 'draw', label: 'Drawing' }
+			]}
+			bind:value={() => store.mode, (mode) => store.setMode(mode)}
+		/>
 
 		<div class="flex flex-col gap-2">
-			<div class="flex min-h-12 items-center justify-between gap-2">
-				{#if store.mode === 'text'}
-					<label for="message" class="font-semibold text-fg-muted">
-						{store.editing ? 'Editing a saved message' : 'Your message'}
-					</label>
-				{:else}
-					<p class="font-semibold text-fg-muted">
-						{store.editing ? 'Editing a saved drawing' : 'Draw with your finger'}
-					</p>
-				{/if}
-				{#if store.editing}
-					<!-- Go replaces the saved entry while editing; this keeps the original, and Go adds a new one. -->
-					<button
-						type="button"
-						class="min-h-12 cursor-pointer rounded-lg px-3 text-lg font-semibold text-brand active:bg-surface"
-						onclick={() => store.stopEditing()}
-					>
-						Edit as new
-					</button>
-				{/if}
-			</div>
+			<!-- The Drawing toggle already says what the pad is for, so it only gets a heading while editing. -->
+			{#if store.mode === 'text' || store.editing}
+				<div class="flex min-h-12 items-center justify-between gap-2">
+					{#if store.mode === 'text'}
+						<label for="message" class={label}>{store.editing ? 'Editing a saved message' : 'Message'}</label>
+					{:else}
+						<p class={label}>Editing a saved drawing</p>
+					{/if}
+					{#if store.editing}
+						<!-- Go replaces the saved entry while editing; this keeps the original, and Go adds a new one. -->
+						<button type="button" class={textButton} onclick={() => store.stopEditing()}>Edit as new</button>
+					{/if}
+				</div>
+			{/if}
 			{#if store.mode === 'text'}
 				{#key textBoxKey}
 					<textarea
@@ -299,7 +281,7 @@
 
 	{#if store.mode === 'text'}
 		<section class="flex flex-col gap-2">
-			<h2 class="font-semibold text-fg-muted">Stickers</h2>
+			<h2 class={label}>Stickers</h2>
 			<div class="grid grid-cols-5 gap-2">
 				{#each STICKERS as sticker (sticker)}
 					<button
@@ -317,50 +299,21 @@
 	<SavedList onplay={play} onedit={showEditor} />
 
 	<section class="flex flex-col gap-6">
-		<h2 class="font-semibold text-fg-muted">Style</h2>
+		<h2 class={label}>Style</h2>
 		<!-- Stays in view while scrolling through the options below it. -->
 		{#if !playing}
 			<div class="sticky top-0 z-10 -mx-4 -mt-4 bg-bg px-4 py-2">
 				<Preview item={store.current ?? { text: 'TAXI PLEASE' }} blinking={previewBlinking} />
 			</div>
 		{/if}
-		<Choice legend="Text size" name="size" options={SIZES} bind:value={store.size} />
+		<Choice legend="Size" name="size" options={SIZES} bind:value={store.size} />
 		<Choice legend="Look" name="look" options={LOOKS} bind:value={store.look} />
 		<Choice legend="Frame" name="frame" options={FRAMES} bind:value={store.frame} />
 
-		<fieldset>
-			<legend class="mb-2 font-semibold text-fg-muted">Color</legend>
-			<div class="grid grid-cols-3 gap-2">
-				{#each COLORS as color (color.id)}
-					<label
-						class="relative flex min-h-14 cursor-pointer items-center justify-center rounded-lg border border-line-strong text-2xl font-black has-checked:border-4 has-checked:border-fg has-focus-visible:outline-2 has-focus-visible:outline-offset-2 has-focus-visible:outline-focus has-disabled:cursor-default has-disabled:opacity-40"
-						style:background-color={color.bg}
-						style:color={color.fg}
-					>
-						<input
-							class="absolute inset-0 cursor-pointer opacity-0 disabled:cursor-default"
-							type="radio"
-							name="color"
-							value={color.id}
-							disabled={store.hdr && !HDR_COLORS.includes(color.id)}
-							bind:group={store.color}
-						/>
-						<span aria-hidden="true">{store.color === color.id ? '✓' : 'Aa'}</span>
-						<span class="sr-only">{color.label}</span>
-					</label>
-				{/each}
-				<CustomSwatch
-					label="Custom color"
-					bind:value={store.customColor}
-					selected={store.color === 'custom'}
-					disabled={store.hdr}
-					onselect={() => (store.color = 'custom')}
-				/>
-			</div>
-			{#if store.hdr}
-				<p class="mt-2 text-fg-muted">Extra bright works with white on black and black on white.</p>
-			{/if}
-		</fieldset>
+		<!-- In draw mode the color picker is the pen, by the pad. -->
+		{#if store.mode === 'text'}
+			<ColorPicker />
+		{/if}
 
 		<Choice
 			legend="Extra bright"
@@ -419,11 +372,9 @@
 		/>
 	</section>
 
-	<footer class="flex flex-col gap-4">
-		{#if showInstallHint}
-			<p class="text-fg-muted">To install, tap Share, then Add to Home Screen.</p>
-		{/if}
-	</footer>
+	{#if showInstallHint}
+		<p class="text-fg-muted">To install, tap Share, then Add to Home Screen.</p>
+	{/if}
 </main>
 
 {#if playing}

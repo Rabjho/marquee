@@ -39,11 +39,11 @@ export const COLORS = [
 	{ id: 'paper', label: 'Black on white', fg: '#000000', bg: '#ffffff' }
 ] as const;
 
-/** Starting value for the custom color, shared by the sign and the drawing ink. */
+/** Starting value for the custom color. */
 export const CUSTOM_COLOR = '#ffb000';
 
 export const BLINKS = [
-	{ id: 'flash', label: 'Flash', hint: 'The text blinks on and off.' },
+	{ id: 'flash', label: 'Flash', hint: 'The message or drawing blinks on and off.' },
 	{ id: 'strobe', label: 'Strobe', hint: 'The whole screen pulses with light.' },
 	{ id: 'invert', label: 'Invert', hint: 'Text and background swap colors.' }
 ] as const;
@@ -64,21 +64,11 @@ export const STICKERS = [
  */
 export const DRAWING = { height: 100, view: 150, maxWidth: 6000, brush: 6 } as const;
 
-/** Ink colors for drawings. `null` follows the sign color, so it changes with the Color preset. */
-export const INKS = [
-	{ id: 'sign', label: 'Sign color', value: null },
-	{ id: 'red', label: 'Red', value: '#ff2a2a' },
-	{ id: 'yellow', label: 'Yellow', value: '#ffe600' },
-	{ id: 'green', label: 'Green', value: '#39ff14' },
-	{ id: 'cyan', label: 'Cyan', value: '#00e5ff' }
-] as const;
 
 export type LookId = (typeof LOOKS)[number]['id'];
 export type FrameId = (typeof FRAMES)[number]['id'];
 export type SizeId = (typeof SIZES)[number]['id'];
 export type ColorId = (typeof COLORS)[number]['id'];
-/** An ink preset, or the custom color. */
-export type InkId = (typeof INKS)[number]['id'] | 'custom';
 /** A color preset, or the color chosen with the picker. */
 export type SignColorId = ColorId | 'custom';
 export type BlinkId = (typeof BLINKS)[number]['id'];

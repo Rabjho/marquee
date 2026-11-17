@@ -4,6 +4,7 @@
 	// entries into order, and buttons to delete them.
 	import { tick } from 'svelte';
 	import { clean, store, type Entry } from '../store.svelte';
+	import { label as heading, secondary, textButton } from '../ui';
 	import DrawingView from './DrawingView.svelte';
 
 	let {
@@ -62,10 +63,10 @@
 
 <section class="flex flex-col gap-2" aria-labelledby="saved-title">
 	<div class="flex min-h-12 items-center justify-between gap-2">
-		<h2 id="saved-title" class="font-semibold text-fg-muted">Saved</h2>
+		<h2 id="saved-title" class={heading}>Saved</h2>
 		{#if store.entries.length > 0}
 			<button
-				class="min-h-12 cursor-pointer rounded-lg px-3 text-lg font-semibold text-brand active:bg-surface"
+				class={textButton}
 				aria-pressed={arranging}
 				onclick={() => (arranging = !arranging)}
 			>
@@ -76,19 +77,17 @@
 
 	<!-- Always shown, so the playlist is there to be found before anything is in it. -->
 	<button
-		class="min-h-14 cursor-pointer rounded-lg border border-line-strong px-4 text-lg font-semibold active:bg-surface disabled:cursor-default disabled:opacity-40"
+		class={secondary}
 		disabled={store.playlist.length === 0}
 		onclick={() => onplay(store.playlist)}
 	>
-		▶ Play playlist{store.playlist.length ? ` (${store.playlist.length}) on repeat` : ''}
+		▶ Play playlist{store.playlist.length ? ` (${store.playlist.length})` : ''}
 	</button>
 
 	{#if store.entries.length === 0}
 		<p class="text-fg-muted">Messages and drawings you show are kept here. Tap + on them to build a playlist.</p>
 	{:else if arranging}
 		<p class="text-fg-muted">Drag ≡ to change the order.</p>
-	{:else}
-		<p class="text-fg-muted">Tap + to add to the playlist. Numbers show the order it plays in.</p>
 	{/if}
 
 	<ul class="flex flex-col gap-2">

@@ -1,13 +1,14 @@
 <script lang="ts">
-	// Finger drawing with the bare minimum: one brush, a few inks, undo and clear.
+	// Finger drawing with the bare minimum: one brush, the color picker as the pen, undo and clear.
 	// The drawing is a long strip. The pad shows one stretch of it; two fingers drag it along,
 	// and it scrolls by itself while a stroke is held near either edge.
 	// What is drawn goes straight into the store, where Go picks it up.
 	import type { Snippet } from 'svelte';
 	import { pathData, type Stroke } from '../drawing';
-	import { DRAWING, INKS } from '../presets';
+	import { DRAWING } from '../presets';
 	import { store } from '../store.svelte';
-	import CustomSwatch from './CustomSwatch.svelte';
+	import { secondary } from '../ui';
+	import ColorPicker from './ColorPicker.svelte';
 
 	/** Shown between the pad's tools: the Go button. */
 	let { children }: { children: Snippet } = $props();
@@ -34,9 +35,6 @@
 	let grab: { x: number; offset: number; scale: number } | null = null;
 
 	const sign = $derived(store.colors);
-	const inkColor = $derived(
-		store.ink === 'custom' ? store.customColor : (INKS.find((i) => i.id === store.ink) ?? INKS[0]).value
-	);
 	const all = $derived(current ? [...store.sketch, current] : store.sketch);
 	/** The length of the strip so far: what has been drawn, or where the pad is, whichever is further. */
 	const length = $derived(
@@ -75,7 +73,7 @@
 		canvas.setPointerCapture(event.pointerId);
 		fingers.set(event.pointerId, event.clientX);
 		if (fingers.size === 1) {
-			current = { color: inkColor, points: point(event) };
+			current = { color: store.pen, points: point(event) };
 			followEdge(event);
 		} else {
 			// A second finger means dragging, so the mark the first one began is dropped.
@@ -156,8 +154,6 @@
 		else if (event.key === 'ArrowLeft') pan(-STEP);
 	}
 
-	const secondary =
-		'min-h-14 cursor-pointer rounded-lg border border-line-strong px-4 text-lg font-semibold active:bg-surface disabled:opacity-40';
 </script>
 
 <div class="flex flex-col gap-4">
@@ -222,8 +218,10 @@
 				stroke-linecap="butt"
 			/>
 		</svg>
-		<p class="text-fg-muted">Drag the strip above, or the pad with two fingers, for more room.</p>
+		<p class="text-fg-muted">For more room, drag this strip or the pad with two fingers.</p>
 	</div>
+
+	<ColorPicker />
 
 	<div class="grid grid-cols-2 gap-2">
 		<button type="button" class={secondary} disabled={store.sketch.length === 0} onclick={() => store.sketch.pop()}>
@@ -235,34 +233,4 @@
 	</div>
 
 	{@render children()}
-
-	<fieldset>
-		<legend class="mb-2 font-semibold text-fg-muted">Ink</legend>
-		<div class="grid grid-cols-6 gap-2">
-			{#each INKS as option (option.id)}
-				<label
-					class="relative flex min-h-14 cursor-pointer items-center justify-center rounded-lg border border-line-strong text-2xl font-black has-checked:border-4 has-checked:border-fg has-focus-visible:outline-2 has-focus-visible:outline-offset-2 has-focus-visible:outline-focus"
-					style:background-color={sign.bg}
-					style:color={option.value ?? sign.fg}
-				>
-					<input
-						class="absolute inset-0 cursor-pointer opacity-0"
-						type="radio"
-						name="ink"
-						value={option.id}
-						bind:group={store.ink}
-					/>
-					<span aria-hidden="true">{store.ink === option.id ? '✓' : '●'}</span>
-					<span class="sr-only">{option.label}</span>
-				</label>
-			{/each}
-			<CustomSwatch
-				label="Custom ink"
-				bind:value={store.customColor}
-				selected={store.ink === 'custom'}
-				background={sign.bg}
-				onselect={() => (store.ink = 'custom')}
-			/>
-		</div>
-	</fieldset>
 </div>

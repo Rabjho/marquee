@@ -7,7 +7,6 @@
 	let { item, blinking }: { item: Item; blinking: boolean } = $props();
 
 	let width = $state(0);
-	let scrolls = $state(false);
 
 	const ratio = Math.min(Math.max(screen.width, screen.height) / Math.min(screen.width, screen.height), 2.4);
 	const reducedMotion = matchMedia('(prefers-reduced-motion: reduce)').matches;
@@ -19,9 +18,6 @@
 	aria-hidden="true"
 >
 	{#if width}
-		<Sign {item} {width} height={Math.round(width / ratio)} {blinking} still={reducedMotion} bind:scrolls />
+		<Sign {item} {width} height={Math.round(width / ratio)} {blinking} still={reducedMotion} />
 	{/if}
 </div>
-{#if !scrolls}
-	<p class="mt-2 text-fg-muted">This fits, so it stays still. Longer ones scroll.</p>
-{/if}

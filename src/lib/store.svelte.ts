@@ -5,13 +5,11 @@ import {
 	DIRECTIONS,
 	DRAWING,
 	CUSTOM_COLOR,
-	INKS,
 	FRAMES,
 	LOOKS,
 	SIZES,
 	SPEED,
 	type BlinkId,
-	type InkId,
 	type SignColorId,
 	type DirectionId,
 	type FrameId,
@@ -45,10 +43,8 @@ type Saved = {
 	look: LookId;
 	frame: FrameId;
 	color: SignColorId;
-	/** The color picked with the custom option, for the sign and for the drawing ink. */
+	/** The color picked with the custom option. */
 	customColor: string;
-	/** The ink chosen on the drawing pad. */
-	ink: InkId;
 	hdr: boolean;
 	speed: number;
 	direction: DirectionId;
@@ -143,7 +139,6 @@ function load(): Saved {
 		frame: oneOf(FRAMES, raw.frame, 'none'),
 		color: raw.color === 'custom' ? 'custom' : oneOf(COLORS, raw.color, 'white'),
 		customColor: hexOr(raw.customColor, CUSTOM_COLOR),
-		ink: raw.ink === 'custom' ? 'custom' : oneOf(INKS, raw.ink, 'sign'),
 		hdr: raw.hdr === true,
 		speed: within(SPEED, LEGACY_SPEED[raw.speed as unknown as string] ?? raw.speed),
 		direction: oneOf(DIRECTIONS, raw.direction, 'left'),
@@ -180,7 +175,6 @@ class Store {
 	frame = $state<FrameId>('none');
 	color = $state<SignColorId>('white');
 	customColor = $state<string>(CUSTOM_COLOR);
-	ink = $state<InkId>('sign');
 	hdr = $state(false);
 	speed = $state<number>(SPEED.initial);
 	direction = $state<DirectionId>('left');
@@ -199,6 +193,14 @@ class Store {
 		if (this.hdr && !HDR_COLORS.includes(this.color)) return COLORS[0];
 		if (this.color === 'custom') return { fg: this.customColor, bg: '#000000' };
 		return COLORS.find((c) => c.id === this.color) ?? COLORS[0];
+	}
+
+	/**
+	 * The color a new stroke is drawn in. White and black on white draw in the sign's own
+	 * color (null), so switching between them swaps black and white across the drawing.
+	 */
+	get pen(): string | null {
+		return this.hdr || this.color === 'white' || this.color === 'paper' ? null : this.colors.fg;
 	}
 
 	/** The entries switched on, in list order. */
@@ -289,7 +291,6 @@ class Store {
 			frame: this.frame,
 			color: this.color,
 			customColor: this.customColor,
-			ink: this.ink,
 			hdr: this.hdr,
 			speed: this.speed,
 			direction: this.direction,
