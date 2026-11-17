@@ -31,7 +31,9 @@
 	/** The QR library, loaded the first time a code is asked for to keep the first load small. */
 	let qrcode = $state.raw<typeof import('qrcode-generator') | null>(null);
 	/** The text box, while in text mode. */
-	let input = $state<HTMLTextAreaElement>();
+	let goButton = $state<HTMLButtonElement>();
+	/** What started the sign, for focus to go back to when it closes. */
+	let opener: HTMLElement | null = null;
 	/** Bumped on every play, which gives the drawing pad a fresh start. */
 	let playCount = $state(0);
 	let previewBlinking = $state(false);
@@ -63,15 +65,15 @@
 		readSharedLink();
 		// iOS has no install prompt. `navigator.standalone` only exists there.
 		showInstallHint = 'standalone' in navigator && !navigator.standalone;
-		input?.focus();
 	});
 
-	function play(entries: Pick<Entry, 'text' | 'drawing'>[]) {
+	function play(entries: Pick<Entry, 'text' | 'drawing' | 'color'>[]) {
 		const items = entries.filter(hasContent).map(toItem);
-		if (items.length === 0) {
-			input?.focus();
-			return;
-		}
+		if (items.length === 0) return;
+		// Back to the button that was tapped. Not the text box, though (Enter there plays too):
+		// focusing it would pop up the keyboard, so Go stands in for it.
+		const active = document.activeElement;
+		opener = active instanceof HTMLTextAreaElement ? (goButton ?? null) : (active as HTMLElement | null);
 		// Asked from inside the tap, as iOS requires for the motion permission prompt.
 		shake.start();
 		notice = '';
@@ -85,32 +87,29 @@
 	 */
 	function go() {
 		const items = store.lineup;
-		if (items.length === 0) {
-			input?.focus();
-			return;
-		}
+		if (items.length === 0) return;
 		play(items);
 		store.record();
 		store.clearEditor();
 	}
 
-	/** Back to the text box, as the sign closes. */
+	/** The sign closes, and focus goes back to what opened it, if it is still there. */
 	async function stop() {
 		playing = null;
 		await tick();
-		input?.focus();
+		if (opener?.isConnected) opener.focus({ preventScroll: true });
+		opener = null;
 	}
 
 	/** A saved entry was loaded for editing: bring the text box or pad into view. */
 	async function showEditor() {
 		await tick();
 		scrollTo({ top: 0 });
-		input?.focus({ preventScroll: true });
 	}
 
 	const goLabel = $derived.by(() => {
 		const count = store.lineup.length;
-		if (count === 1 && store.current) return `Go: show this ${store.mode === 'draw' ? 'drawing' : 'message'}`;
+		if (count === 0 || (count === 1 && store.current)) return `Go: show this ${store.mode === 'draw' ? 'drawing' : 'message'}`;
 		return `Go: play the playlist, ${count} ${count === 1 ? 'entry' : 'entries'}`;
 	});
 
@@ -215,7 +214,6 @@
 			{#if store.mode === 'text'}
 					<textarea
 						id="message"
-						bind:this={input}
 						bind:value={store.draft}
 						{@attach noUndo}
 						class="w-full resize-none rounded-lg border border-line-strong bg-surface p-4 text-2xl font-semibold placeholder:text-fg-muted"
@@ -245,6 +243,7 @@
 		<ColorPicker />
 
 		<button
+			bind:this={goButton}
 			class="min-h-24 cursor-pointer rounded-lg bg-brand text-4xl font-black text-on-brand hover:bg-brand-hover active:bg-brand-hover"
 			aria-label={goLabel}
 		>
