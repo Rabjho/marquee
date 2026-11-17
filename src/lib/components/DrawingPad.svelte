@@ -3,7 +3,7 @@
 	// The drawing is a long strip. The pad shows one stretch of it; two fingers drag it along.
 	import { onMount } from 'svelte';
 	import { pathData, trimmed, type Drawing, type Stroke } from '../drawing';
-	import { COLORS, DRAWING, INKS } from '../presets';
+	import { DRAWING, INKS } from '../presets';
 	import { store } from '../store.svelte';
 
 	let {
@@ -23,7 +23,7 @@
 	let strokes = $state<Stroke[]>(drawing ? $state.snapshot(drawing.strokes) : []);
 	/** The stroke under the finger right now. */
 	let current = $state<Stroke | null>(null);
-	let inkId = $state<(typeof INKS)[number]['id']>('sign');
+	let inkId = $state<(typeof INKS)[number]['id'] | 'custom'>('sign');
 	/** Left edge of the stretch shown in the pad. */
 	let offset = $state(0);
 	let canvas: SVGSVGElement;
@@ -32,8 +32,10 @@
 	/** Two fingers move the strip; it stays that way until every finger has lifted. */
 	let panning = false;
 
-	const sign = $derived(COLORS.find((c) => c.id === store.color) ?? COLORS[0]);
-	const ink = $derived(INKS.find((i) => i.id === inkId) ?? INKS[0]);
+	const sign = $derived(store.colors);
+	const inkColor = $derived(
+		inkId === 'custom' ? store.customInk : (INKS.find((i) => i.id === inkId) ?? INKS[0]).value
+	);
 	const all = $derived(current ? [...strokes, current] : strokes);
 	/** The length of the strip so far: what has been drawn, or where the pad is, whichever is further. */
 	const length = $derived(
@@ -59,7 +61,7 @@
 		canvas.setPointerCapture(event.pointerId);
 		fingers.set(event.pointerId, event.clientX);
 		if (fingers.size === 1) {
-			current = { color: ink.value, points: point(event) };
+			current = { color: inkColor, points: point(event) };
 		} else {
 			// A second finger means dragging, so the mark the first one began is dropped.
 			current = null;
@@ -167,7 +169,7 @@
 
 		<fieldset>
 			<legend class="mb-2 font-semibold text-fg-muted">Ink</legend>
-			<div class="grid auto-cols-fr grid-flow-col gap-2">
+			<div class="grid grid-cols-5 gap-2">
 				{#each INKS as option (option.id)}
 					<label
 						class="relative flex min-h-14 cursor-pointer items-center justify-center rounded-lg border border-line-strong text-2xl font-black has-checked:border-4 has-checked:border-fg has-focus-visible:outline-2 has-focus-visible:outline-offset-2 has-focus-visible:outline-focus"
@@ -185,6 +187,24 @@
 						<span class="sr-only">{option.label}</span>
 					</label>
 				{/each}
+				<label
+					class="relative col-span-5 flex min-h-14 cursor-pointer items-center justify-center gap-3 rounded-lg border bg-bg text-2xl font-black has-focus-visible:outline-2 has-focus-visible:outline-offset-2 has-focus-visible:outline-focus {inkId ===
+					'custom'
+						? 'border-4 border-fg'
+						: 'border-line-strong'}"
+					style:color={store.customInk}
+				>
+					<input
+						class="absolute inset-0 size-full cursor-pointer opacity-0"
+						type="color"
+						aria-label={inkId === 'custom' ? 'Custom ink, selected' : 'Custom ink'}
+						bind:value={store.customInk}
+						onclick={() => (inkId = 'custom')}
+						oninput={() => (inkId = 'custom')}
+					/>
+					<span aria-hidden="true">{inkId === 'custom' ? '✓' : '●'}</span>
+					<span class="text-lg text-fg">Custom ink</span>
+				</label>
 			</div>
 		</fieldset>
 

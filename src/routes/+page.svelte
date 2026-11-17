@@ -327,6 +327,25 @@
 						<span class="sr-only">{color.label}</span>
 					</label>
 				{/each}
+				<!-- Any other color: tapping opens the system color picker and selects the custom color. -->
+				<label
+					class="relative col-span-4 flex min-h-14 cursor-pointer items-center justify-center gap-3 rounded-lg border bg-bg text-xl font-black has-focus-visible:outline-2 has-focus-visible:outline-offset-2 has-focus-visible:outline-focus {store.color ===
+					'custom'
+						? 'border-4 border-fg'
+						: 'border-line-strong'}"
+					style:color={store.customColor}
+				>
+					<input
+						class="absolute inset-0 size-full cursor-pointer opacity-0"
+						type="color"
+						aria-label={store.color === 'custom' ? 'Custom color, selected' : 'Custom color'}
+						bind:value={store.customColor}
+						onclick={() => (store.color = 'custom')}
+						oninput={() => (store.color = 'custom')}
+					/>
+					<span aria-hidden="true">{store.color === 'custom' ? '✓' : 'Aa'}</span>
+					<span class="text-lg text-fg">Custom color</span>
+				</label>
 			</div>
 		</fieldset>
 

@@ -2,7 +2,7 @@
 	// The sign surface at any size: used full screen by Stage and in miniature by Preview.
 	// The drawing itself is done by SignRenderer; this component feeds it the settings.
 	import { onMount } from 'svelte';
-	import { COLORS, SIZES } from '../presets';
+	import { SIZES } from '../presets';
 	import { SignRenderer, type Settings } from '../renderer';
 	import { store, type Item } from '../store.svelte';
 
@@ -35,7 +35,7 @@
 	let video = $state<HTMLVideoElement>();
 	let videoFailed = $state(false);
 
-	const color = $derived(COLORS.find((c) => c.id === store.color) ?? COLORS[0]);
+	const color = $derived(store.colors);
 	const settings = $derived<Settings>({
 		fg: color.fg,
 		bg: color.bg,

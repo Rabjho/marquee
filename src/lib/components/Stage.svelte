@@ -28,9 +28,7 @@
 	const height = $derived(rotated ? viewportWidth : viewportHeight);
 
 	// Extra-bright mode is always white on black.
-	const color = $derived(
-		store.hdr ? COLORS[0] : (COLORS.find((c) => c.id === store.color) ?? COLORS[0])
-	);
+	const color = $derived(store.hdr ? COLORS[0] : store.colors);
 	const isPlaylist = $derived(items.length > 1);
 	const item = $derived(items[index % items.length]);
 	/** Shown when shaking is not possible, so blinking never depends on the sensor. */

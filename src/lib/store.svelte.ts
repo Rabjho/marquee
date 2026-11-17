@@ -4,13 +4,13 @@ import {
 	COLORS,
 	DIRECTIONS,
 	DRAWING,
+	CUSTOM,
 	FRAMES,
-	INKS,
 	LOOKS,
 	SIZES,
 	SPEED,
 	type BlinkId,
-	type ColorId,
+	type SignColorId,
 	type DirectionId,
 	type FrameId,
 	type LookId,
@@ -31,7 +31,11 @@ type Saved = {
 	size: SizeId;
 	look: LookId;
 	frame: FrameId;
-	color: ColorId;
+	color: SignColorId;
+	/** The color picked with the custom option, used when `color` is 'custom'. */
+	customColor: string;
+	/** The ink picked with the custom option in the drawing pad. */
+	customInk: string;
 	hdr: boolean;
 	speed: number;
 	direction: DirectionId;
@@ -41,25 +45,30 @@ type Saved = {
 
 const KEY = 'marquee:v1';
 
+/** Colors from the color picker: always #rrggbb. */
+const HEX = /^#[0-9a-f]{6}$/i;
+const hexOr = (value: unknown, fallback: string) =>
+	typeof value === 'string' && HEX.test(value) ? value.toLowerCase() : fallback;
+
 const newCard = (text = ''): Card => ({ id: crypto.randomUUID(), text });
 
 const oneOf = <T extends { id: string }>(list: readonly T[], id: unknown, fallback: T['id']) =>
 	list.some((item) => item.id === id) ? (id as T['id']) : fallback;
 
-/** Keeps only well-formed strokes in a known ink. Reads the older path-string format too. */
+/** Keeps only well-formed strokes in the sign color or a hex ink. Reads the older path-string format too. */
 function loadDrawing(raw: unknown): Drawing | undefined {
 	const saved = raw as { strokes?: unknown; width?: unknown } | undefined;
 	if (!Array.isArray(saved?.strokes)) return undefined;
 	const strokes: Stroke[] = [];
 	for (const stroke of saved.strokes as { color?: unknown; points?: unknown; d?: unknown }[]) {
-		const ink = INKS.find((option) => option.value === stroke?.color);
+		const color = stroke?.color === null ? null : hexOr(stroke?.color, '');
 		const points = Array.isArray(stroke?.points)
 			? stroke.points
 			: typeof stroke?.d === 'string'
 				? (stroke.d.match(/\d+(\.\d+)?/g) ?? []).map(Number)
 				: [];
 		const valid = points.length >= 2 && points.length % 2 === 0 && points.every(Number.isFinite);
-		if (ink && valid) strokes.push({ color: ink.value, points });
+		if (color !== '' && valid) strokes.push({ color, points });
 	}
 	if (strokes.length === 0) return undefined;
 	const width =
@@ -97,7 +106,9 @@ function load(): Saved {
 		size: oneOf(SIZES, raw.size, 'big'),
 		look: oneOf(LOOKS, raw.look, 'smooth'),
 		frame: oneOf(FRAMES, raw.frame, 'none'),
-		color: oneOf(COLORS, raw.color, 'white'),
+		color: raw.color === 'custom' ? 'custom' : oneOf(COLORS, raw.color, 'white'),
+		customColor: hexOr(raw.customColor, CUSTOM.color),
+		customInk: hexOr(raw.customInk, CUSTOM.ink),
 		hdr: raw.hdr === true,
 		speed: within(SPEED, LEGACY_SPEED[raw.speed as unknown as string] ?? raw.speed),
 		direction: oneOf(DIRECTIONS, raw.direction, 'left'),
@@ -117,7 +128,9 @@ class Store {
 	size = $state<SizeId>('big');
 	look = $state<LookId>('smooth');
 	frame = $state<FrameId>('none');
-	color = $state<ColorId>('white');
+	color = $state<SignColorId>('white');
+	customColor = $state<string>(CUSTOM.color);
+	customInk = $state<string>(CUSTOM.ink);
 	hdr = $state(false);
 	speed = $state<number>(SPEED.initial);
 	direction = $state<DirectionId>('left');
@@ -131,6 +144,12 @@ class Store {
 	/** The card shown in the text box. Always a text card. */
 	get selected(): Card {
 		return this.cards.find((c) => c.id === this.selectedId) ?? this.cards.find((c) => !c.drawing)!;
+	}
+
+	/** The sign's text and background colors, from a preset or the custom color. */
+	get colors(): { fg: string; bg: string } {
+		if (this.color === 'custom') return { fg: this.customColor, bg: '#000000' };
+		return COLORS.find((c) => c.id === this.color) ?? COLORS[0];
 	}
 
 	/** Cards that have something to show. */
@@ -191,6 +210,8 @@ class Store {
 			look: this.look,
 			frame: this.frame,
 			color: this.color,
+			customColor: this.customColor,
+			customInk: this.customInk,
 			hdr: this.hdr,
 			speed: this.speed,
 			direction: this.direction,
