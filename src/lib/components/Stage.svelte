@@ -25,9 +25,10 @@
 	const width = $derived(rotated ? viewportHeight : viewportWidth);
 	const height = $derived(rotated ? viewportWidth : viewportHeight);
 
-	const color = $derived(store.colors);
 	const isPlaylist = $derived(items.length > 1);
 	const item = $derived(items[index % items.length]);
+	/** Each entry plays in its own color. */
+	const color = $derived(store.colorsFor(item.color));
 	/** Shown when shaking is not possible, so blinking never depends on the sensor. */
 	const needsButton = $derived(shake.status === 'denied' || shake.status === 'unavailable');
 
@@ -100,7 +101,7 @@
 			aria-label="Stop the sign"
 			onclick={onstop}
 		>
-			<Sign item={inGap ? null : item} {width} {height} {blinking} loop={!isPlaylist} onend={next} />
+			<Sign item={inGap ? null : item} color={item.color} {width} {height} {blinking} loop={!isPlaylist} onend={next} />
 		</button>
 
 		{#if needsButton}

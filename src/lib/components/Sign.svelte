@@ -4,7 +4,7 @@
 	import { onMount } from 'svelte';
 	import { SIZES } from '../presets';
 	import { SignRenderer, type Settings } from '../renderer';
-	import { store, type Item } from '../store.svelte';
+	import { baseFor, store, type ColorKey, type Item } from '../store.svelte';
 
 	let {
 		item,
@@ -14,8 +14,11 @@
 		loop = true,
 		still = false,
 		onend,
-		scrolls = $bindable(false)
+		scrolls = $bindable(false),
+		color: colorKey
 	}: {
+		/** The color to paint in, when it should outlast the item (a gap between playlist entries). */
+		color?: ColorKey;
 		/** The message or drawing to show, or null for a blank sign. */
 		item: Item | null;
 		width: number;
@@ -35,10 +38,10 @@
 	let video = $state<HTMLVideoElement>();
 	let videoFailed = $state(false);
 
-	const color = $derived(store.colors);
+	const color = $derived(store.colorsFor(colorKey ?? item?.color));
 	const settings = $derived<Settings>({
 		// A drawing's plain strokes are white or black; its colored strokes carry their own color.
-		fg: item?.drawing ? store.base : color.fg,
+		fg: item?.drawing ? baseFor(color) : color.fg,
 		bg: color.bg,
 		scale: (SIZES.find((s) => s.id === store.size) ?? SIZES[0]).scale,
 		speed: store.speed,

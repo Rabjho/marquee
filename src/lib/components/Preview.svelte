@@ -22,6 +22,6 @@
 	aria-hidden="true"
 >
 	{#if width}
-		<Sign {item} loop={items.length < 2} onend={() => index++} {width} height={Math.round(width / ratio)} {blinking} still={reducedMotion} />
+		<Sign {item} color={item?.color} loop={items.length < 2} onend={() => index++} {width} height={Math.round(width / ratio)} {blinking} still={reducedMotion} />
 	{/if}
 </div>

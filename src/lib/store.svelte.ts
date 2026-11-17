@@ -20,10 +20,18 @@ import { trimmed, type Drawing, type Stroke } from './drawing';
 
 export type { Drawing, Stroke };
 
-/** A saved message or drawing (its text is then unused). Every message that is played is kept. */
-export type Entry = { id: string; text: string; drawing?: Drawing };
+/**
+ * The color a message or drawing was made in: a preset id, or a custom #rrggbb. For a drawing
+ * it sets the background (black, or white for black on white); its strokes keep their own colors.
+ */
+export type ColorKey = string;
+/**
+ * A saved message or drawing (its text is then unused), with its color. Every message that is
+ * played is kept.
+ */
+export type Entry = { id: string; text: string; drawing?: Drawing; color?: ColorKey };
 /** What the sign shows. */
-export type Item = { text: string; drawing?: Drawing };
+export type Item = { text: string; drawing?: Drawing; color?: ColorKey };
 /** Whether Go shows the text box or the drawing pad. */
 export type Mode = 'text' | 'draw';
 
@@ -58,11 +66,11 @@ const HEX = /^#[0-9a-f]{6}$/i;
 const hexOr = (value: unknown, fallback: string) =>
 	typeof value === 'string' && HEX.test(value) ? value.toLowerCase() : fallback;
 
-const newEntry = (text: string, drawing?: Drawing): Entry => ({
-	id: crypto.randomUUID(),
-	text,
-	drawing
-});
+const newEntry = (item: Item): Entry => ({ id: crypto.randomUUID(), ...item });
+
+/** A saved color key, if it is a preset or a hex color. */
+const loadColor = (value: unknown): ColorKey | undefined =>
+	COLORS.some((c) => c.id === value) ? (value as string) : hexOr(value, '') || undefined;
 
 const oneOf = <T extends { id: string }>(list: readonly T[], id: unknown, fallback: T['id']) =>
 	list.some((item) => item.id === id) ? (id as T['id']) : fallback;
@@ -111,7 +119,13 @@ function load(): Saved {
 	if (Array.isArray(raw.entries)) {
 		entries = raw.entries
 			.filter((e) => typeof e?.id === 'string' && typeof e?.text === 'string')
-			.map((e) => ({ id: e.id, text: e.text, drawing: loadDrawing(e.drawing), on: (e as { on?: unknown }).on === true }));
+			.map((e) => ({
+				id: e.id,
+				text: e.text,
+				drawing: loadDrawing(e.drawing),
+				color: loadColor(e.color),
+				on: (e as { on?: unknown }).on === true
+			}));
 	} else {
 		// Older versions kept a playlist of cards, and the text box edited one of them. The
 		// cards become entries; when there were several, they were a playlist, so they start on.
@@ -125,6 +139,10 @@ function load(): Saved {
 			.filter(hasContent);
 	}
 	entries = entries.filter(hasContent);
+	// Entries from before colors were saved keep the color the sign had then.
+	const color = raw.color === 'custom' ? 'custom' : oneOf(COLORS, raw.color, 'white');
+	const customColor = hexOr(raw.customColor, CUSTOM_COLOR);
+	for (const entry of entries) entry.color ??= color === 'custom' ? customColor : color;
 	const ids = new Set(entries.map((e) => e.id));
 	// Older versions marked playlist entries with `on` and played them in list order.
 	const playlistIds = Array.isArray(raw.playlistIds)
@@ -136,13 +154,13 @@ function load(): Saved {
 		draft,
 		sketch: loadDrawing({ strokes: raw.sketch })?.strokes ?? [],
 		editingId,
-		entries: entries.map(({ id, text, drawing }) => ({ id, text, drawing })),
+		entries: entries.map(({ id, text, drawing, color }) => ({ id, text, drawing, color })),
 		playlistIds,
 		size: oneOf(SIZES, raw.size, 'big'),
 		look: oneOf(LOOKS, raw.look, 'smooth'),
 		frame: oneOf(FRAMES, raw.frame, 'none'),
-		color: raw.color === 'custom' ? 'custom' : oneOf(COLORS, raw.color, 'white'),
-		customColor: hexOr(raw.customColor, CUSTOM_COLOR),
+		color,
+		customColor,
 		hdr: raw.hdr === true,
 		speed: within(SPEED, LEGACY_SPEED[raw.speed as unknown as string] ?? raw.speed),
 		direction: oneOf(DIRECTIONS, raw.direction, 'left'),
@@ -157,9 +175,10 @@ export const clean = (text: string) => text.replace(/\s+/g, ' ').trim();
 export const hasContent = (entry: Pick<Entry, 'text' | 'drawing'>) =>
 	!!entry.drawing || clean(entry.text) !== '';
 
-export const toItem = (entry: Pick<Entry, 'text' | 'drawing'>): Item => ({
+export const toItem = (entry: Pick<Entry, 'text' | 'drawing' | 'color'>): Item => ({
 	text: clean(entry.text),
-	drawing: entry.drawing
+	drawing: entry.drawing,
+	color: entry.color
 });
 
 /** The colors extra-bright can show. */
@@ -168,9 +187,13 @@ export const HDR_COLORS: SignColorId[] = ['white', 'paper'];
 /** Two drawings are the same when their strokes are. */
 const sameDrawing = (a: Drawing, b: Drawing) => JSON.stringify(a.strokes) === JSON.stringify(b.strokes);
 
-/** Two items are the same message, or the same drawing. */
+/** Two items are the same message, or the same drawing, in the same color. */
 const sameItem = (a: Item, b: Item) =>
-	a.drawing && b.drawing ? sameDrawing(a.drawing, b.drawing) : !a.drawing && !b.drawing && a.text === b.text;
+	a.color === b.color &&
+	(a.drawing && b.drawing ? sameDrawing(a.drawing, b.drawing) : !a.drawing && !b.drawing && a.text === b.text);
+
+/** White strokes on a black sign, black ones on a white sign. */
+export const baseFor = (colors: { bg: string }) => (colors.bg === '#000000' ? '#ffffff' : '#000000');
 
 class Store {
 	mode = $state<Mode>('text');
@@ -199,9 +222,23 @@ class Store {
 	 * only has HDR white to work with, so it allows white on black and black on white.
 	 */
 	get colors(): { fg: string; bg: string } {
-		if (this.hdr && !HDR_COLORS.includes(this.color)) return COLORS[0];
-		if (this.color === 'custom') return { fg: this.customColor, bg: '#000000' };
-		return COLORS.find((c) => c.id === this.color) ?? COLORS[0];
+		return this.colorsFor(this.colorKey);
+	}
+
+	/** The color picked right now, as it is saved with a message or drawing. */
+	get colorKey(): ColorKey {
+		return this.color === 'custom' ? this.customColor : this.color;
+	}
+
+	/**
+	 * Text and background colors for a saved color, or the current one for entries saved
+	 * without. Extra-bright only has HDR white to work with, so anything else becomes white.
+	 */
+	colorsFor(key: ColorKey | undefined): { fg: string; bg: string } {
+		key ??= this.colorKey;
+		const preset = COLORS.find((c) => c.id === key);
+		if (this.hdr && !(preset && HDR_COLORS.includes(preset.id))) return COLORS[0];
+		return preset ?? { fg: key, bg: '#000000' };
 	}
 
 	/**
@@ -209,7 +246,7 @@ class Store {
 	 * The text color never touches a drawing.
 	 */
 	get base(): string {
-		return this.colors.bg === '#000000' ? '#ffffff' : '#000000';
+		return baseFor(this.colors);
 	}
 
 	/**
@@ -269,36 +306,39 @@ class Store {
 	/** What Go shows: the text box or the drawing pad, depending on the mode. */
 	get current(): Item | null {
 		if (this.mode === 'draw') {
-			return this.sketch.length ? { text: '', drawing: trimmed($state.snapshot(this.sketch)) } : null;
+			return this.sketch.length
+				? { text: '', drawing: trimmed($state.snapshot(this.sketch)), color: this.colorKey }
+				: null;
 		}
 		const text = clean(this.draft);
-		return text ? { text } : null;
+		return text ? { text, color: this.colorKey } : null;
 	}
 
 	/**
-	 * Keeps what Go shows, as it is played. When editing a saved entry it replaces that one;
-	 * otherwise it goes at the top, unless the same message or drawing is already saved.
+	 * Keeps what Go shows, with its color, as it is played. When editing a saved entry it
+	 * replaces that one; otherwise it goes at the top, unless it is already saved in that color.
 	 */
 	record() {
 		const item = this.current;
 		if (!item) return;
 		const editing = this.editing;
 		if (editing) {
-			editing.text = item.text;
-			editing.drawing = item.drawing;
-		} else if (
-			!this.entries.some((e) =>
-				item.drawing ? e.drawing && sameDrawing(e.drawing, item.drawing) : !e.drawing && clean(e.text) === item.text
-			)
-		) {
-			this.entries.unshift(newEntry(item.text, item.drawing));
+			Object.assign(editing, item);
+		} else if (!this.entries.some((e) => sameItem(toItem(e), item))) {
+			this.entries.unshift(newEntry(item));
 		}
 	}
 
-	/** Puts a saved entry in the text box or on the drawing pad, to be changed and played again. */
+	/** Puts a saved entry in the text box or on the drawing pad, in its color, to be changed and played again. */
 	edit(id: string) {
 		const entry = this.entries.find((e) => e.id === id);
 		if (!entry) return;
+		if (entry.color?.startsWith('#')) {
+			this.color = 'custom';
+			this.customColor = entry.color;
+		} else if (entry.color) {
+			this.color = entry.color as SignColorId;
+		}
 		if (entry.drawing) {
 			this.mode = 'draw';
 			this.sketch = $state.snapshot(entry.drawing.strokes);

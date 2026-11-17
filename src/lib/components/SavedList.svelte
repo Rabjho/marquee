@@ -2,7 +2,7 @@
 	// Every message and drawing that has been played, in one list, newest first. Tapping +
 	// adds an entry to the playlist, which Go plays in the order the entries were added.
 	// Delete mode swaps the edit buttons for delete buttons and offers to clear everything.
-	import { clean, store, type Entry } from '../store.svelte';
+	import { baseFor, clean, store, type Entry } from '../store.svelte';
 	import { label as heading, secondary, textButton } from '../ui';
 	import DrawingView from './DrawingView.svelte';
 
@@ -69,6 +69,7 @@
 		{#each store.entries as entry (entry.id)}
 			{@const label = name(entry)}
 			{@const place = store.place(entry.id)}
+			{@const colors = store.colorsFor(entry.color)}
 			<li class="flex gap-2">
 				<!-- Off: a + to add it. On: its place in the playlist. -->
 				<label
@@ -93,12 +94,23 @@
 					onclick={() => onplay([entry])}
 				>
 					<span class="text-fg-muted" aria-hidden="true">▶</span>
+					<!-- A miniature of the sign, in the colors it was saved in. -->
 					{#if entry.drawing}
-						<span class="min-w-0 overflow-hidden">
+						<span
+							class="min-w-0 overflow-hidden rounded"
+							style:background-color={colors.bg}
+							style:color={baseFor(colors)}
+						>
 							<DrawingView drawing={entry.drawing} height={40} />
 						</span>
 					{:else}
-						<span class="truncate">{label}</span>
+						<span
+							class="truncate rounded px-2"
+							style:background-color={colors.bg}
+							style:color={colors.fg}
+						>
+							{label}
+						</span>
 					{/if}
 				</button>
 
