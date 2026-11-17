@@ -32,8 +32,10 @@
 	/** Two fingers move the strip; it stays that way until every finger has lifted. */
 	let panning = false;
 	let minimap: SVGSVGElement;
-	/** Strip units per screen pixel in the miniature, fixed while a finger slides along it. */
-	let minimapScale = 0;
+	let minimapWidth = $state(0);
+	let minimapHeight = $state(0);
+	/** A drag on the miniature: where it began, and strip units per screen pixel. */
+	let grab: { x: number; offset: number; scale: number } | null = null;
 
 	const sign = $derived(store.colors);
 	const inkColor = $derived(
@@ -45,6 +47,17 @@
 		Math.max(offset + DRAWING.view, ...all.flatMap((s) => s.points.filter((_, i) => i % 2 === 0)))
 	);
 
+	/**
+	 * How much of the strip the miniature shows: all of it plus one pad's worth of empty
+	 * room to drag into, and at least enough to fill the miniature at full height.
+	 */
+	const span = $derived(
+		Math.max(
+			length + DRAWING.view,
+			minimapHeight ? (minimapWidth / minimapHeight) * DRAWING.height : 0
+		)
+	);
+
 	/** Pointer position on the strip, kept inside the visible stretch. */
 	function point(event: PointerEvent): [number, number] {
 		const box = canvas.getBoundingClientRect();
@@ -54,8 +67,10 @@
 		return [Math.round((offset + x) * 10) / 10, Math.round(y * 10) / 10];
 	}
 
+	const clampOffset = (value: number) => Math.min(Math.max(value, 0), DRAWING.maxWidth - DRAWING.view);
+
 	function pan(units: number) {
-		offset = Math.min(Math.max(offset + units, 0), DRAWING.maxWidth - DRAWING.view);
+		offset = clampOffset(offset + units);
 	}
 
 	const middle = () => [...fingers.values()].reduce((sum, x) => sum + x, 0) / fingers.size;
@@ -91,18 +106,22 @@
 		panning = false;
 	}
 
-	/** Centres the pad on the spot under the finger in the miniature strip. */
-	function jump(event: PointerEvent) {
-		const x = (event.clientX - minimap.getBoundingClientRect().left) * minimapScale;
-		offset = Math.min(Math.max(x - DRAWING.view / 2, 0), length - DRAWING.view);
-	}
-
+	/**
+	 * The miniature works like a scrollbar: pressing outside the marked stretch jumps there,
+	 * and dragging moves the pad along with the finger, out into empty room if need be.
+	 */
 	function minimapStart(event: PointerEvent) {
 		minimap.setPointerCapture(event.pointerId);
-		// The miniature is fitted by height or width, whichever runs out first ("meet").
 		const box = minimap.getBoundingClientRect();
-		minimapScale = Math.max(length / box.width, DRAWING.height / box.height);
-		jump(event);
+		// The miniature is fitted by height or width, whichever runs out first ("meet").
+		const scale = Math.max(span / box.width, DRAWING.height / box.height);
+		const x = (event.clientX - box.left) * scale;
+		if (x < offset || x > offset + DRAWING.view) offset = clampOffset(x - DRAWING.view / 2);
+		grab = { x: event.clientX, offset, scale };
+	}
+
+	function minimapMove(event: PointerEvent) {
+		if (grab) offset = clampOffset(grab.offset + (event.clientX - grab.x) * grab.scale);
 	}
 
 	/** Arrow keys move the strip too, for when there is no touch screen. */
@@ -156,11 +175,13 @@
 
 		<!-- The whole strip in miniature, with the stretch shown above marked on it. -->
 		<div class="flex flex-col gap-2">
-			<!-- Pressing or sliding along it moves the pad; the arrow keys do the same on the canvas. -->
+			<!-- Pressing or dragging on it moves the pad; the arrow keys do the same on the canvas. -->
 			<svg
 				bind:this={minimap}
-				class="h-12 w-full cursor-pointer touch-none rounded-lg bg-surface"
-				viewBox="0 0 {length} {DRAWING.height}"
+				bind:clientWidth={minimapWidth}
+				bind:clientHeight={minimapHeight}
+				class="h-12 w-full cursor-grab touch-none rounded-lg bg-surface active:cursor-grabbing"
+				viewBox="0 0 {span} {DRAWING.height}"
 				preserveAspectRatio="xMinYMid meet"
 				style:color={sign.fg}
 				fill="none"
@@ -169,7 +190,9 @@
 				stroke-linejoin="round"
 				aria-hidden="true"
 				onpointerdown={minimapStart}
-				onpointermove={(event) => minimap.hasPointerCapture(event.pointerId) && jump(event)}
+				onpointermove={minimapMove}
+				onpointerup={() => (grab = null)}
+				onpointercancel={() => (grab = null)}
 			>
 				<rect width={length} height={DRAWING.height} fill={sign.bg} stroke="none" />
 				{#each all as stroke, i (i)}
@@ -185,7 +208,7 @@
 					stroke-linecap="butt"
 				/>
 			</svg>
-			<p class="text-fg-muted">Drag with two fingers for more room, or slide along the strip to move.</p>
+			<p class="text-fg-muted">Drag the strip above, or the pad with two fingers, for more room.</p>
 		</div>
 
 		<fieldset>
