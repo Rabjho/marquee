@@ -74,7 +74,6 @@ const SAMPLES = 4;
 /** The share of a dot that must be covered for it to light. */
 const COVERAGE = 0.3;
 const FONT = "system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif";
-const MONO = "ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace";
 const EMOJI =
 	/((?:\p{Regional_Indicator}{2}|\p{Extended_Pictographic})(?:️|‍\p{Extended_Pictographic}|[\u{1F3FB}-\u{1F3FF}])*)/u;
 const RTL = /[֐-ࣿיִ-﷿ﹰ-﻿]/;
@@ -144,9 +143,8 @@ export class SignRenderer {
 	#settings: Settings;
 	#item: Item | null = null;
 	#paths: { color: string | null; path: Path2D }[] = [];
-	/** The drawing traced onto the dot grid, relative to its left edge, and what it was traced for. */
-	#cells: [number, number, string | null][] = [];
-	#cellsKey = '';
+	/** The ASCII look's shadow lines, drawn apart and then laid over the sign. */
+	#layer = document.createElement('canvas');
 	#loop = true;
 	#still = false;
 	#blinking = false;
@@ -221,7 +219,6 @@ export class SignRenderer {
 			return { color, path };
 		});
 		this.#layout = null;
-		this.#cellsKey = '';
 		this.#travelled = 0;
 		this.#held = 0;
 		this.#ended = false;
@@ -377,9 +374,10 @@ export class SignRenderer {
 		const chase = s.frame === 'bulbs' ? Math.floor((time / 1000) * CHASE_HZ) % 3 : 0;
 		const stripes = s.frame === 'stripes' && frameOn ? ((time / 1000) * STRIPE_HZ) % 1 : 0;
 
-		// In the dot looks the message is laid out on a coarse grid of font dots, drawings too.
-		// An ASCII character is half as wide as it is tall, so there each dot is two cells wide.
-		const grid = s.look !== 'smooth';
+		// In the dot looks the message is laid out on a coarse grid of font dots. An ASCII
+		// character is half as wide as it is tall, so there each dot is two cells wide.
+		// Drawings are always shown as drawn: the looks are for lettering.
+		const grid = s.look !== 'smooth' && !this.#item?.drawing;
 		const rows = rowsFor(GLYPH_HEIGHT, s.scale);
 		const cellHeight = innerHeight / rows;
 		const perDot = s.look === 'ascii' ? 2 : 1;
@@ -453,7 +451,7 @@ export class SignRenderer {
 
 	/**
 	 * The dot looks: draw the message on a hidden canvas at a few samples per cell, then
-	 * light each cell that is covered enough, as a round dot, a square pixel or a '#'.
+	 * light each cell that is covered enough, as a round dot, a square pixel or an ASCII block.
 	 */
 	#paintGrid(
 		ctx: CanvasRenderingContext2D,
@@ -467,17 +465,9 @@ export class SignRenderer {
 		ink: Paint
 	) {
 		const look = this.#settings.look;
-		let lit: [number, number, string | null][] = [];
+		const lit: [number, number, string | null][] = [];
 
-		if (layout && this.#item?.drawing) {
-			// Drawings are traced stroke by stroke, so every line stays a connected line of dots.
-			const shift = Math.round(x / mode.snap);
-			lit = this.#trace(mode).flatMap(([column, row, color]) =>
-				column + shift >= 0 && column + shift < columns
-					? [[column + shift, row, color] as [number, number, string | null]]
-					: []
-			);
-		} else if (layout) {
+		if (layout) {
 			const grid = this.#gridCtx;
 			const w = columns * SAMPLES;
 			const h = rows * SAMPLES;
@@ -521,15 +511,7 @@ export class SignRenderer {
 		}
 
 		if (look === 'ascii') {
-			// Sized so one character is as wide as a cell, like text in a terminal.
-			ctx.font = `700 ${cellWidth / 0.6}px ${MONO}`;
-			ctx.textBaseline = 'middle';
-			ctx.textAlign = 'center';
-			for (const [column, row, color] of lit) {
-				this.#use(ctx, color ?? ink);
-				ctx.fillText('#', (column + 0.5) * cellWidth, (row + 0.5) * cellHeight);
-			}
-			ctx.globalCompositeOperation = 'source-over';
+			this.#paintAscii(ctx, lit, columns, rows, cellWidth, cellHeight, ink);
 			return;
 		}
 
@@ -586,50 +568,90 @@ export class SignRenderer {
 	}
 
 	/**
-	 * The drawing as dots: each stroke becomes a chain of cells one dot wide, joined from
-	 * point to point with no gaps. Columns count from the drawing's left edge.
+	 * ASCII in the "ANSI Shadow" style of figlet banners: every lit cell is a solid block █,
+	 * and a double-line shadow (╔═╗ ║ ╚═╝) is cast one cell down and to the right. The
+	 * characters are drawn as shapes rather than with a font, so the lines join without seams.
 	 */
-	#trace(mode: Mode): [number, number, string | null][] {
-		const key = [mode.drawingHeight, mode.bandHeight, mode.snap].join();
-		if (this.#cellsKey === key) return this.#cells;
-		const k = mode.drawingHeight / DRAWING.height;
-		const top = (mode.bandHeight - mode.drawingHeight) / 2;
-		const cells = new Map<string, [number, number, string | null]>();
-		const light = (column: number, row: number, color: string | null) => {
-			if (row < 0 || row >= mode.bandHeight) return;
-			cells.set(`${column},${row}`, [column, row, color]);
-		};
-		for (const { color, points } of this.#item?.drawing?.strokes ?? []) {
-			const cell = (i: number) => [
-				Math.floor((points[i] * k) / mode.snap),
-				Math.floor(top + points[i + 1] * k)
-			];
-			let [c0, r0] = cell(0);
-			light(c0, r0, color);
-			for (let i = 2; i < points.length; i += 2) {
-				const [c1, r1] = cell(i);
-				// Bresenham's line, stepping one cell at a time.
-				const dc = Math.abs(c1 - c0);
-				const dr = -Math.abs(r1 - r0);
-				const sc = c0 < c1 ? 1 : -1;
-				const sr = r0 < r1 ? 1 : -1;
-				let error = dc + dr;
-				while (c0 !== c1 || r0 !== r1) {
-					const twice = error * 2;
-					if (twice >= dr) {
-						error += dr;
-						c0 += sc;
-					}
-					if (twice <= dc) {
-						error += dc;
-						r0 += sr;
-					}
-					light(c0, r0, color);
+	#paintAscii(
+		ctx: CanvasRenderingContext2D,
+		lit: [number, number, string | null][],
+		columns: number,
+		rows: number,
+		cellWidth: number,
+		cellHeight: number,
+		ink: Paint
+	) {
+		if (lit.length === 0) return;
+		const on = new Uint8Array(columns * rows);
+		for (const [column, row] of lit) on[row * columns + column] = 1;
+		const isLit = (c: number, r: number) => c >= 0 && r >= 0 && c < columns && r < rows && on[r * columns + c] === 1;
+		// The letters with their shadow: each block grown by one cell right and down.
+		const solid = (c: number, r: number) =>
+			isLit(c, r) || isLit(c - 1, r) || isLit(c, r - 1) || isLit(c - 1, r - 1);
+
+		// The shadow lines run through cell centres round the outline of that grown shape.
+		// Wherever they pass under a block they are hidden, which leaves the classic shadow.
+		const lines = new Path2D();
+		const at = (c: number, r: number): [number, number] => [(c + 0.5) * cellWidth, (r + 0.5) * cellHeight];
+		for (let r = 0; r <= rows; r++) {
+			for (let c = 0; c <= columns; c++) {
+				if (!solid(c, r)) continue;
+				const right = solid(c + 1, r);
+				if (right && !(solid(c, r - 1) && solid(c + 1, r - 1) && solid(c, r + 1) && solid(c + 1, r + 1))) {
+					lines.moveTo(...at(c, r));
+					lines.lineTo(...at(c + 1, r));
+				}
+				const down = solid(c, r + 1);
+				if (down && !(solid(c - 1, r) && solid(c - 1, r + 1) && solid(c + 1, r) && solid(c + 1, r + 1))) {
+					lines.moveTo(...at(c, r));
+					lines.lineTo(...at(c, r + 1));
 				}
 			}
 		}
-		this.#cellsKey = key;
-		return (this.#cells = [...cells.values()]);
+
+		// A double line is a wide stroke with a narrower one cut out of its middle.
+		const layer = this.#layer;
+		const w = Math.ceil(columns * cellWidth);
+		const h = Math.ceil(rows * cellHeight);
+		if (layer.width !== w || layer.height !== h) {
+			layer.width = w;
+			layer.height = h;
+		}
+		const lc = layer.getContext('2d')!;
+		lc.globalCompositeOperation = 'source-over';
+		lc.clearRect(0, 0, w, h);
+		lc.lineCap = 'square';
+		lc.lineJoin = 'miter';
+		lc.strokeStyle = '#fff';
+		lc.lineWidth = cellWidth * 0.56;
+		lc.stroke(lines);
+		lc.globalCompositeOperation = 'destination-out';
+		lc.lineWidth = cellWidth * 0.24;
+		lc.stroke(lines);
+		lc.globalCompositeOperation = 'source-in';
+		lc.fillStyle = ink === HDR ? '#fff' : ink;
+		lc.fillRect(0, 0, w, h);
+		ctx.globalCompositeOperation = ink === HDR ? 'destination-out' : 'source-over';
+		ctx.drawImage(layer, 0, 0);
+
+		// The blocks on top, a hair oversized so neighbours merge without hairline gaps.
+		const plain = new Path2D();
+		const colored = new Map<string, Path2D>();
+		for (const [column, row, color] of lit) {
+			let path = plain;
+			if (color) {
+				path = colored.get(color) ?? new Path2D();
+				colored.set(color, path);
+			}
+			path.rect(column * cellWidth - 0.5, row * cellHeight - 0.5, cellWidth + 1, cellHeight + 1);
+		}
+		this.#use(ctx, ink);
+		ctx.fill(plain);
+		ctx.globalCompositeOperation = 'source-over';
+		for (const [color, path] of colored) {
+			ctx.fillStyle = color;
+			ctx.fill(path);
+		}
 	}
 
 	#paintFrame(

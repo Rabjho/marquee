@@ -18,9 +18,9 @@ export const SIZES = [
 
 export const LOOKS = [
 	{ id: 'smooth', label: 'Smooth' },
-	{ id: 'led', label: 'Circles' },
-	{ id: 'pixels', label: 'Pixels' },
-	{ id: 'ascii', label: 'ASCII' }
+	{ id: 'led', label: 'Circles', hint: 'Drawings always show as drawn.' },
+	{ id: 'pixels', label: 'Pixels', hint: 'Drawings always show as drawn.' },
+	{ id: 'ascii', label: 'ASCII', hint: 'Drawings always show as drawn.' }
 ] as const;
 
 export const FRAMES = [
