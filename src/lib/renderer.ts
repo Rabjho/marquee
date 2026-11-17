@@ -61,8 +61,6 @@ type Mode = {
 	dots: boolean;
 	/** Positions snap to multiples of this, so dots never land between cells. */
 	snap: number;
-	/** The thinnest a drawing's line may get, in layout units, so it never falls between dots. */
-	minLine: number;
 };
 
 /** How long a message that fits stays up before `onend`, when not looping. */
@@ -71,11 +69,6 @@ const HOLD_MS = 3000;
 const CHASE_HZ = 3;
 /** Frame stripes travel round this many stripe widths per second. */
 const STRIPE_HZ = 1.5;
-/**
- * In the dot looks a drawing is this many dots tall. Much finer than the 7-row letters: a
- * drawing has thin lines and detail, which a few big dots would lose.
- */
-const DRAWING_DOTS = 21;
 /** Each dot is drawn as this many samples across and down, to see how much of it is covered. */
 const SAMPLES = 4;
 /** The share of a dot that must be covered for it to light. */
@@ -151,6 +144,9 @@ export class SignRenderer {
 	#settings: Settings;
 	#item: Item | null = null;
 	#paths: { color: string | null; path: Path2D }[] = [];
+	/** The drawing traced onto the dot grid, relative to its left edge, and what it was traced for. */
+	#cells: [number, number, string | null][] = [];
+	#cellsKey = '';
 	#loop = true;
 	#still = false;
 	#blinking = false;
@@ -225,6 +221,7 @@ export class SignRenderer {
 			return { color, path };
 		});
 		this.#layout = null;
+		this.#cellsKey = '';
 		this.#travelled = 0;
 		this.#held = 0;
 		this.#ended = false;
@@ -309,7 +306,7 @@ export class SignRenderer {
 			ctx.save();
 			ctx.translate(x, (mode.bandHeight - mode.drawingHeight) / 2);
 			ctx.scale(k, k);
-			ctx.lineWidth = Math.max(DRAWING.brush, mode.minLine / k);
+			ctx.lineWidth = DRAWING.brush;
 			ctx.lineCap = ctx.lineJoin = 'round';
 			for (const { color, path } of this.#paths) {
 				this.#use(ctx, color ?? ink);
@@ -380,12 +377,10 @@ export class SignRenderer {
 		const chase = s.frame === 'bulbs' ? Math.floor((time / 1000) * CHASE_HZ) % 3 : 0;
 		const stripes = s.frame === 'stripes' && frameOn ? ((time / 1000) * STRIPE_HZ) % 1 : 0;
 
-		// In the dot looks the message is laid out on a coarse grid of dots. Letters use the
-		// 7-row font; drawings get a much finer grid. An ASCII character is half as wide as it
-		// is tall, so there each dot is two cells wide.
+		// In the dot looks the message is laid out on a coarse grid of font dots, drawings too.
+		// An ASCII character is half as wide as it is tall, so there each dot is two cells wide.
 		const grid = s.look !== 'smooth';
-		const drawing = !!this.#item?.drawing;
-		const rows = rowsFor(drawing ? DRAWING_DOTS : GLYPH_HEIGHT, s.scale);
+		const rows = rowsFor(GLYPH_HEIGHT, s.scale);
 		const cellHeight = innerHeight / rows;
 		const perDot = s.look === 'ascii' ? 2 : 1;
 		const cellWidth = cellHeight / perDot;
@@ -395,11 +390,10 @@ export class SignRenderer {
 					viewWidth: columns / perDot,
 					bandHeight: rows,
 					textHeight: GLYPH_HEIGHT + 1,
-					drawingHeight: drawing ? DRAWING_DOTS : rows,
+					drawingHeight: rows,
 					weight: 700,
 					dots: true,
-					snap: 1 / perDot,
-					minLine: 1.3
+					snap: 1 / perDot
 				}
 			: {
 					viewWidth: innerWidth,
@@ -408,8 +402,7 @@ export class SignRenderer {
 					drawingHeight: Math.round(innerHeight * s.scale),
 					weight: 900,
 					dots: false,
-					snap: 1 / 64,
-					minLine: 0
+					snap: 1 / 64
 				};
 
 		let x = 0;
@@ -474,9 +467,17 @@ export class SignRenderer {
 		ink: Paint
 	) {
 		const look = this.#settings.look;
-		const lit: [number, number, string | null][] = [];
+		let lit: [number, number, string | null][] = [];
 
-		if (layout) {
+		if (layout && this.#item?.drawing) {
+			// Drawings are traced stroke by stroke, so every line stays a connected line of dots.
+			const shift = Math.round(x / mode.snap);
+			lit = this.#trace(mode).flatMap(([column, row, color]) =>
+				column + shift >= 0 && column + shift < columns
+					? [[column + shift, row, color] as [number, number, string | null]]
+					: []
+			);
+		} else if (layout) {
 			const grid = this.#gridCtx;
 			const w = columns * SAMPLES;
 			const h = rows * SAMPLES;
@@ -582,6 +583,53 @@ export class SignRenderer {
 			ctx.fillStyle = color;
 			ctx.fill(path);
 		}
+	}
+
+	/**
+	 * The drawing as dots: each stroke becomes a chain of cells one dot wide, joined from
+	 * point to point with no gaps. Columns count from the drawing's left edge.
+	 */
+	#trace(mode: Mode): [number, number, string | null][] {
+		const key = [mode.drawingHeight, mode.bandHeight, mode.snap].join();
+		if (this.#cellsKey === key) return this.#cells;
+		const k = mode.drawingHeight / DRAWING.height;
+		const top = (mode.bandHeight - mode.drawingHeight) / 2;
+		const cells = new Map<string, [number, number, string | null]>();
+		const light = (column: number, row: number, color: string | null) => {
+			if (row < 0 || row >= mode.bandHeight) return;
+			cells.set(`${column},${row}`, [column, row, color]);
+		};
+		for (const { color, points } of this.#item?.drawing?.strokes ?? []) {
+			const cell = (i: number) => [
+				Math.floor((points[i] * k) / mode.snap),
+				Math.floor(top + points[i + 1] * k)
+			];
+			let [c0, r0] = cell(0);
+			light(c0, r0, color);
+			for (let i = 2; i < points.length; i += 2) {
+				const [c1, r1] = cell(i);
+				// Bresenham's line, stepping one cell at a time.
+				const dc = Math.abs(c1 - c0);
+				const dr = -Math.abs(r1 - r0);
+				const sc = c0 < c1 ? 1 : -1;
+				const sr = r0 < r1 ? 1 : -1;
+				let error = dc + dr;
+				while (c0 !== c1 || r0 !== r1) {
+					const twice = error * 2;
+					if (twice >= dr) {
+						error += dr;
+						c0 += sc;
+					}
+					if (twice <= dc) {
+						error += dc;
+						r0 += sr;
+					}
+					light(c0, r0, color);
+				}
+			}
+		}
+		this.#cellsKey = key;
+		return (this.#cells = [...cells.values()]);
 	}
 
 	#paintFrame(
