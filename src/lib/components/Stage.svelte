@@ -1,8 +1,7 @@
 <script lang="ts">
 	// The sign itself: full screen, nothing but the message. Tap anywhere to stop.
 	import { onMount } from 'svelte';
-	import { COLORS } from '../presets';
-	import { shake } from '../shake.svelte';
+		import { shake } from '../shake.svelte';
 	import { store, type Item } from '../store.svelte';
 	import { keepAwake } from '../wakelock';
 	import Sign from './Sign.svelte';
@@ -26,8 +25,7 @@
 	const width = $derived(rotated ? viewportHeight : viewportWidth);
 	const height = $derived(rotated ? viewportWidth : viewportHeight);
 
-	// Extra-bright mode is always white on black.
-	const color = $derived(store.hdr ? COLORS[0] : store.colors);
+	const color = $derived(store.colors);
 	const isPlaylist = $derived(items.length > 1);
 	const item = $derived(items[index % items.length]);
 	/** Shown when shaking is not possible, so blinking never depends on the sensor. */

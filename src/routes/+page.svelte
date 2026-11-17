@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { onMount, tick } from 'svelte';
 	import Choice from '../lib/components/Choice.svelte';
+	import CustomSwatch from '../lib/components/CustomSwatch.svelte';
 	import DrawingPad from '../lib/components/DrawingPad.svelte';
 	import Preview from '../lib/components/Preview.svelte';
 	import SavedList from '../lib/components/SavedList.svelte';
@@ -19,7 +20,7 @@
 		STICKERS
 	} from '../lib/presets';
 	import { shake } from '../lib/shake.svelte';
-	import { clean, hasContent, store, toItem, type Entry, type Item } from '../lib/store.svelte';
+	import { clean, hasContent, HDR_COLORS, store, toItem, type Entry, type Item } from '../lib/store.svelte';
 
 	/** What is on the sign right now, or null while editing. */
 	let playing = $state<Item[] | null>(null);
@@ -327,46 +328,38 @@
 		<Choice legend="Look" name="look" options={LOOKS} bind:value={store.look} />
 		<Choice legend="Frame" name="frame" options={FRAMES} bind:value={store.frame} />
 
-		<fieldset disabled={store.hdr} class="disabled:opacity-40">
+		<fieldset>
 			<legend class="mb-2 font-semibold text-fg-muted">Color</legend>
-			<div class="grid grid-cols-4 gap-2">
+			<div class="grid grid-cols-3 gap-2">
 				{#each COLORS as color (color.id)}
 					<label
-						class="relative flex min-h-14 cursor-pointer items-center justify-center rounded-lg border border-line-strong text-2xl font-black has-checked:border-4 has-checked:border-fg has-focus-visible:outline-2 has-focus-visible:outline-offset-2 has-focus-visible:outline-focus"
+						class="relative flex min-h-14 cursor-pointer items-center justify-center rounded-lg border border-line-strong text-2xl font-black has-checked:border-4 has-checked:border-fg has-focus-visible:outline-2 has-focus-visible:outline-offset-2 has-focus-visible:outline-focus has-disabled:cursor-default has-disabled:opacity-40"
 						style:background-color={color.bg}
 						style:color={color.fg}
 					>
 						<input
-							class="absolute inset-0 cursor-pointer opacity-0"
+							class="absolute inset-0 cursor-pointer opacity-0 disabled:cursor-default"
 							type="radio"
 							name="color"
 							value={color.id}
+							disabled={store.hdr && !HDR_COLORS.includes(color.id)}
 							bind:group={store.color}
 						/>
 						<span aria-hidden="true">{store.color === color.id ? '✓' : 'Aa'}</span>
 						<span class="sr-only">{color.label}</span>
 					</label>
 				{/each}
-				<!-- Any other color: tapping opens the system color picker and selects the custom color. -->
-				<label
-					class="relative col-span-4 flex min-h-14 cursor-pointer items-center justify-center gap-3 rounded-lg border bg-bg text-xl font-black has-focus-visible:outline-2 has-focus-visible:outline-offset-2 has-focus-visible:outline-focus {store.color ===
-					'custom'
-						? 'border-4 border-fg'
-						: 'border-line-strong'}"
-					style:color={store.customColor}
-				>
-					<input
-						class="absolute inset-0 size-full cursor-pointer opacity-0"
-						type="color"
-						aria-label={store.color === 'custom' ? 'Custom color, selected' : 'Custom color'}
-						bind:value={store.customColor}
-						onclick={() => (store.color = 'custom')}
-						oninput={() => (store.color = 'custom')}
-					/>
-					<span aria-hidden="true">{store.color === 'custom' ? '✓' : 'Aa'}</span>
-					<span class="text-lg text-fg">Custom color</span>
-				</label>
+				<CustomSwatch
+					label="Custom color"
+					bind:value={store.customColor}
+					selected={store.color === 'custom'}
+					disabled={store.hdr}
+					onselect={() => (store.color = 'custom')}
+				/>
 			</div>
+			{#if store.hdr}
+				<p class="mt-2 text-fg-muted">Extra bright works with white on black and black on white.</p>
+			{/if}
 		</fieldset>
 
 		<Choice
@@ -377,10 +370,17 @@
 				{
 					id: 'on',
 					label: 'On',
-					hint: 'Brighter than normal white, on screens that can do it. The message turns white. Turn your screen brightness all the way up. Uses more battery.'
+					hint: 'Brighter than normal white, on screens that can do it. Turn your screen brightness all the way up. Uses more battery.'
 				}
 			]}
-			bind:value={() => (store.hdr ? 'on' : 'off'), (value) => (store.hdr = value === 'on')}
+			bind:value={
+				() => (store.hdr ? 'on' : 'off'),
+				(value) => {
+					store.hdr = value === 'on';
+					// Other colors cannot be extra bright, so they make way for white.
+					if (store.hdr && !HDR_COLORS.includes(store.color)) store.color = 'white';
+				}
+			}
 		/>
 
 		<!-- The slider is exponential: each step changes the speed by the same proportion,

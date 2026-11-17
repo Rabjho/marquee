@@ -7,6 +7,7 @@
 	import { pathData, type Stroke } from '../drawing';
 	import { DRAWING, INKS } from '../presets';
 	import { store } from '../store.svelte';
+	import CustomSwatch from './CustomSwatch.svelte';
 
 	/** Shown between the pad's tools: the Go button. */
 	let { children }: { children: Snippet } = $props();
@@ -238,7 +239,7 @@
 
 	<fieldset>
 		<legend class="mb-2 font-semibold text-fg-muted">Ink</legend>
-		<div class="grid grid-cols-5 gap-2">
+		<div class="grid grid-cols-6 gap-2">
 			{#each INKS as option (option.id)}
 				<label
 					class="relative flex min-h-14 cursor-pointer items-center justify-center rounded-lg border border-line-strong text-2xl font-black has-checked:border-4 has-checked:border-fg has-focus-visible:outline-2 has-focus-visible:outline-offset-2 has-focus-visible:outline-focus"
@@ -256,24 +257,13 @@
 					<span class="sr-only">{option.label}</span>
 				</label>
 			{/each}
-			<label
-				class="relative col-span-5 flex min-h-14 cursor-pointer items-center justify-center gap-3 rounded-lg border bg-bg text-2xl font-black has-focus-visible:outline-2 has-focus-visible:outline-offset-2 has-focus-visible:outline-focus {inkId ===
-				'custom'
-					? 'border-4 border-fg'
-					: 'border-line-strong'}"
-				style:color={store.customInk}
-			>
-				<input
-					class="absolute inset-0 size-full cursor-pointer opacity-0"
-					type="color"
-					aria-label={inkId === 'custom' ? 'Custom ink, selected' : 'Custom ink'}
-					bind:value={store.customInk}
-					onclick={() => (inkId = 'custom')}
-					oninput={() => (inkId = 'custom')}
-				/>
-				<span aria-hidden="true">{inkId === 'custom' ? '✓' : '●'}</span>
-				<span class="text-lg text-fg">Custom ink</span>
-			</label>
+			<CustomSwatch
+				label="Custom ink"
+				bind:value={store.customInk}
+				selected={inkId === 'custom'}
+				background={sign.bg}
+				onselect={() => (inkId = 'custom')}
+			/>
 		</div>
 	</fieldset>
 </div>

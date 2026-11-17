@@ -22,31 +22,32 @@ against a deployed build.
 
 ## Layout
 
-| Path                                    | What                                                                  |
-| --------------------------------------- | --------------------------------------------------------------------- |
-| `src/routes/+layout.svelte`             | App shell: loads the global styles                                    |
-| `src/routes/+layout.ts`                 | Turns off server rendering; the app is one prerendered shell          |
-| `src/routes/+page.svelte`               | The editing screen: text or drawing, Go, saved list, style presets    |
-| `src/lib/components/Stage.svelte`       | The playing screen: full screen, rotation, tap to stop                |
-| `src/lib/components/Sign.svelte`        | The sign surface, shared by the stage and the preview                 |
-| `src/lib/renderer.ts`                   | Draws the sign on a canvas: scrolling, looks, frames, blinking, HDR   |
-| `src/lib/font5x7.ts`                    | The dot-matrix font used by the LED and ASCII looks                   |
-| `src/lib/drawing.ts`                    | Stroke format for drawings, and trimming them to their content        |
-| `src/lib/components/SavedList.svelte`   | Saved messages and drawings: tick for the playlist, arrange, edit     |
-| `src/lib/components/Preview.svelte`     | The miniature sign next to the style options                          |
-| `src/lib/components/Choice.svelte`      | Preset picker: a row of big radio buttons                             |
-| `src/lib/components/Slider.svelte`      | Range slider with named ends, for speed and similar settings          |
-| `src/lib/components/DrawingPad.svelte`  | Finger drawing on a long strip: inks, undo, clear, edge scrolling     |
-| `src/lib/components/DrawingView.svelte` | Renders a stored drawing at any size                                  |
-| `src/lib/store.svelte.ts`               | Text, drawing, saved list and settings, kept in `localStorage`        |
-| `src/lib/shake.svelte.ts`               | Shake detection and the iOS motion permission                         |
-| `src/lib/wakelock.ts`                   | Keeps the screen on while the sign plays                              |
-| `src/lib/presets.ts`                    | Sizes, looks, frames, colors, blink styles, slider ranges, stickers   |
-| `src/service-worker.ts`                 | Precaches the app for offline use                                     |
-| `src/routes/layout.css`                 | Design tokens and blink animations                                    |
-| `static/manifest.webmanifest`           | Install metadata: name, colors, icons                                 |
-| `static/_headers`                       | Security and caching headers for the deployed site                    |
-| `scripts/icon.svg.mjs`                  | Source of the app icon                                                |
+| Path                                     | What                                                                |
+| ---------------------------------------- | ------------------------------------------------------------------- |
+| `src/routes/+layout.svelte`              | App shell: loads the global styles                                  |
+| `src/routes/+layout.ts`                  | Turns off server rendering; the app is one prerendered shell        |
+| `src/routes/+page.svelte`                | The editing screen: text or drawing, Go, saved list, style presets  |
+| `src/lib/components/Stage.svelte`        | The playing screen: full screen, rotation, tap to stop              |
+| `src/lib/components/Sign.svelte`         | The sign surface, shared by the stage and the preview               |
+| `src/lib/renderer.ts`                    | Draws the sign on a canvas: scrolling, looks, frames, blinking, HDR |
+| `src/lib/font5x7.ts`                     | The dot-matrix font used by the LED and ASCII looks                 |
+| `src/lib/drawing.ts`                     | Stroke format for drawings, and trimming them to their content      |
+| `src/lib/components/SavedList.svelte`    | Saved messages and drawings: tick for the playlist, arrange, edit   |
+| `src/lib/components/Preview.svelte`      | The miniature sign next to the style options                        |
+| `src/lib/components/Choice.svelte`       | Preset picker: a row of big radio buttons                           |
+| `src/lib/components/CustomSwatch.svelte` | Rainbow tile at the end of a color row that opens the color picker  |
+| `src/lib/components/Slider.svelte`       | Range slider with named ends, for speed and similar settings        |
+| `src/lib/components/DrawingPad.svelte`   | Finger drawing on a long strip: inks, undo, clear, edge scrolling   |
+| `src/lib/components/DrawingView.svelte`  | Renders a stored drawing at any size                                |
+| `src/lib/store.svelte.ts`                | Text, drawing, saved list and settings, kept in `localStorage`      |
+| `src/lib/shake.svelte.ts`                | Shake detection and the iOS motion permission                       |
+| `src/lib/wakelock.ts`                    | Keeps the screen on while the sign plays                            |
+| `src/lib/presets.ts`                     | Sizes, looks, frames, colors, blink styles, slider ranges, stickers |
+| `src/service-worker.ts`                  | Precaches the app for offline use                                   |
+| `src/routes/layout.css`                  | Design tokens and blink animations                                  |
+| `static/manifest.webmanifest`            | Install metadata: name, colors, icons                               |
+| `static/_headers`                        | Security and caching headers for the deployed site                  |
+| `scripts/icon.svg.mjs`                   | Source of the app icon                                              |
 
 ## Deploy
 
@@ -70,10 +71,11 @@ magick -background black -density 300 /tmp/maskable.svg -resize 512x512 static/i
 
 ## HDR assets
 
-Extra-bright mode shows the message as holes in a black canvas laid over an HDR white
-video (`static/hdr-white.mp4`, HEVC HLG), with an HDR image (`static/hdr-white.avif`, PQ)
-behind it for when the video cannot play. It stays white only: browsers cannot draw colors
-brighter than normal white, only show HDR media, so each other color would need its own video.
+Extra-bright mode lays the canvas over an HDR white video (`static/hdr-white.mp4`, HEVC
+HLG), with an HDR image (`static/hdr-white.avif`, PQ) behind it for when the video cannot
+play. White on black cuts the letters out of the canvas; black on white cuts out the
+background. Other colors are off in this mode: browsers cannot draw colors brighter than
+normal white, only show HDR media, so each color would need its own video.
 
 Both were made with ffmpeg:
 

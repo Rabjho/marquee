@@ -161,6 +161,9 @@ export const toItem = (entry: Pick<Entry, 'text' | 'drawing'>): Item => ({
 	drawing: entry.drawing
 });
 
+/** The colors extra-bright can show. */
+export const HDR_COLORS: SignColorId[] = ['white', 'paper'];
+
 /** Two drawings are the same when their strokes are. */
 const sameDrawing = (a: Drawing, b: Drawing) => JSON.stringify(a.strokes) === JSON.stringify(b.strokes);
 
@@ -186,8 +189,12 @@ class Store {
 		Object.assign(this, load());
 	}
 
-	/** The sign's text and background colors, from a preset or the custom color. */
+	/**
+	 * The sign's text and background colors, from a preset or the custom color. Extra-bright
+	 * only has HDR white to work with, so it allows white on black and black on white.
+	 */
 	get colors(): { fg: string; bg: string } {
+		if (this.hdr && !HDR_COLORS.includes(this.color)) return COLORS[0];
 		if (this.color === 'custom') return { fg: this.customColor, bg: '#000000' };
 		return COLORS.find((c) => c.id === this.color) ?? COLORS[0];
 	}

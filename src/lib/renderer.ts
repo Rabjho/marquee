@@ -22,8 +22,9 @@ export type Settings = {
 	look: Look;
 	frame: Frame;
 	/**
-	 * Extra-bright mode. The canvas is laid over an HDR white video, and the message is cut
-	 * out of an opaque black canvas, so the HDR white shines through the letter shapes.
+	 * Extra-bright mode. The canvas is laid over an HDR white video. White on black cuts the
+	 * message out of an opaque black canvas, so the HDR white shines through the letter
+	 * shapes; black on white cuts out the background instead and draws the letters black.
 	 */
 	hdr: boolean;
 	blink: Blink;
@@ -337,9 +338,10 @@ export class SignRenderer {
 		const dt = Math.min(time - (this.#lastTime || time), 100);
 		this.#lastTime = time;
 
-		// Colors for this instant. In HDR the message is always HDR white on black.
-		let ink: Paint = s.hdr ? HDR : s.fg;
-		let ground: Paint = s.hdr ? '#000' : s.bg;
+		// Colors for this instant. In HDR whichever of the two is white becomes HDR white.
+		const light = s.bg !== '#000000';
+		let ink: Paint = s.hdr && !light ? HDR : s.fg;
+		let ground: Paint = s.hdr ? (light ? HDR : '#000') : s.bg;
 		let show = this.#item !== null;
 		let flood = false;
 		if (this.#blinking) {
