@@ -22,23 +22,30 @@ against a deployed build.
 
 ## Layout
 
-| Path | What |
-| --- | --- |
-| `src/routes/+page.svelte` | The editing screen: text box, Go, stickers, playlist, style presets |
-| `src/lib/components/Stage.svelte` | The playing screen: full screen, rotation, tap to stop |
-| `src/lib/components/Sign.svelte` | The sign surface, shared by the stage and the preview |
-| `src/lib/renderer.ts` | Draws the sign on a canvas: scrolling, looks, frames, blinking, HDR |
-| `src/lib/font5x7.ts` | The dot-matrix font used by the LED and ASCII looks |
-| `src/lib/drawing.ts` | Stroke format for drawings, and trimming them to their content |
-| `src/lib/components/Preview.svelte` | The miniature sign next to the style options |
-| `src/lib/components/DrawingPad.svelte` | Finger drawing: one brush, a few inks, undo, clear |
-| `src/lib/components/DrawingView.svelte` | Renders a stored drawing at any size |
-| `src/lib/store.svelte.ts` | Messages and settings, saved to `localStorage` |
-| `src/lib/shake.svelte.ts` | Shake detection and the iOS motion permission |
-| `src/lib/presets.ts` | Sizes, looks, frames, colors, blink styles, slider ranges, stickers |
-| `src/service-worker.ts` | Precaches the app for offline use |
-| `src/routes/layout.css` | Design tokens and blink animations |
-| `scripts/icon.svg.mjs` | Source of the app icon |
+| Path                                    | What                                                                  |
+| --------------------------------------- | --------------------------------------------------------------------- |
+| `src/routes/+layout.svelte`             | App shell: loads the global styles                                    |
+| `src/routes/+layout.ts`                 | Turns off server rendering; the app is one prerendered shell          |
+| `src/routes/+page.svelte`               | The editing screen: text box, Go, stickers, playlist, style presets   |
+| `src/lib/components/Stage.svelte`       | The playing screen: full screen, rotation, tap to stop                |
+| `src/lib/components/Sign.svelte`        | The sign surface, shared by the stage and the preview                 |
+| `src/lib/renderer.ts`                   | Draws the sign on a canvas: scrolling, looks, frames, blinking, HDR   |
+| `src/lib/font5x7.ts`                    | The dot-matrix font used by the LED and ASCII looks                   |
+| `src/lib/drawing.ts`                    | Stroke format for drawings, and trimming them to their content        |
+| `src/lib/components/Preview.svelte`     | The miniature sign next to the style options                          |
+| `src/lib/components/Choice.svelte`      | Preset picker: a row of big radio buttons                             |
+| `src/lib/components/Slider.svelte`      | Range slider with named ends, for speed and similar settings          |
+| `src/lib/components/DrawingPad.svelte`  | Finger drawing: one brush, a few inks, undo, clear                    |
+| `src/lib/components/DrawingView.svelte` | Renders a stored drawing at any size                                  |
+| `src/lib/store.svelte.ts`               | Messages and settings, saved to `localStorage`                        |
+| `src/lib/shake.svelte.ts`               | Shake detection and the iOS motion permission                         |
+| `src/lib/wakelock.ts`                   | Keeps the screen on while the sign plays                              |
+| `src/lib/presets.ts`                    | Sizes, looks, frames, colors, blink styles, slider ranges, stickers   |
+| `src/service-worker.ts`                 | Precaches the app for offline use                                     |
+| `src/routes/layout.css`                 | Design tokens and blink animations                                    |
+| `static/manifest.webmanifest`           | Install metadata: name, colors, icons                                 |
+| `static/_headers`                       | Security and caching headers for the deployed site                    |
+| `scripts/icon.svg.mjs`                  | Source of the app icon                                                |
 
 ## Deploy
 
@@ -49,11 +56,15 @@ In Cloudflare Workers Builds, connected to the GitHub mirror: build command
 ## Icons
 
 `static/favicon.svg` and the PNG icons are generated from `scripts/icon.svg.mjs`
-(needs ImageMagick):
+(needs ImageMagick). The maskable icon shrinks the glyph so it stays inside the safe zone:
 
 ```sh
 node scripts/icon.svg.mjs > static/favicon.svg
 magick -background black -density 300 static/favicon.svg -resize 512x512 static/icon-512.png
+magick -background black -density 300 static/favicon.svg -resize 192x192 static/icon-192.png
+magick -background black -density 300 static/favicon.svg -resize 180x180 static/apple-touch-icon.png
+node scripts/icon.svg.mjs 0.72 > /tmp/maskable.svg
+magick -background black -density 300 /tmp/maskable.svg -resize 512x512 static/icon-maskable-512.png
 ```
 
 ## To do
@@ -61,12 +72,19 @@ magick -background black -density 300 static/favicon.svg -resize 512x512 static/
 - Rework how the playlist and drawings fit into the editing screen. Both work, but the
   setup is not right yet: the text box doubles as "the selected playlist card", and
   drawings sit in the same list while behaving differently.
+- Make scrolling in drawing mode nicer i.e. preview should be pressable
+- Text and Drawing mode should have a colour picker not just presets.
+- Some way to save old banners and add to a playlist locally?
+- Shaking should be a toggle for the blinking/strobe.
 
 ## HDR assets
 
 Extra-bright mode shows the message as holes in a black canvas laid over an HDR white
 video (`static/hdr-white.mp4`, HEVC HLG), with an HDR image (`static/hdr-white.avif`, PQ)
-behind it for when the video cannot play. Both were made with ffmpeg:
+behind it for when the video cannot play. It stays white only: browsers cannot draw colors
+brighter than normal white, only show HDR media, so each other color would need its own video.
+
+Both were made with ffmpeg:
 
 ```sh
 ffmpeg -f lavfi -i "color=c=white:s=64x64:r=1:d=600" -vf format=yuv420p10le \
