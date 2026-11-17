@@ -26,7 +26,7 @@ against a deployed build.
 | --------------------------------------- | --------------------------------------------------------------------- |
 | `src/routes/+layout.svelte`             | App shell: loads the global styles                                    |
 | `src/routes/+layout.ts`                 | Turns off server rendering; the app is one prerendered shell          |
-| `src/routes/+page.svelte`               | The editing screen: text box, Go, stickers, saved list, style presets |
+| `src/routes/+page.svelte`               | The editing screen: text or drawing, Go, saved list, style presets    |
 | `src/lib/components/Stage.svelte`       | The playing screen: full screen, rotation, tap to stop                |
 | `src/lib/components/Sign.svelte`        | The sign surface, shared by the stage and the preview                 |
 | `src/lib/renderer.ts`                   | Draws the sign on a canvas: scrolling, looks, frames, blinking, HDR   |
@@ -36,9 +36,9 @@ against a deployed build.
 | `src/lib/components/Preview.svelte`     | The miniature sign next to the style options                          |
 | `src/lib/components/Choice.svelte`      | Preset picker: a row of big radio buttons                             |
 | `src/lib/components/Slider.svelte`      | Range slider with named ends, for speed and similar settings          |
-| `src/lib/components/DrawingPad.svelte`  | Finger drawing: one brush, a few inks, undo, clear                    |
+| `src/lib/components/DrawingPad.svelte`  | Finger drawing on a long strip: inks, undo, clear, edge scrolling     |
 | `src/lib/components/DrawingView.svelte` | Renders a stored drawing at any size                                  |
-| `src/lib/store.svelte.ts`               | Text box, saved list and settings, kept in `localStorage`             |
+| `src/lib/store.svelte.ts`               | Text, drawing, saved list and settings, kept in `localStorage`        |
 | `src/lib/shake.svelte.ts`               | Shake detection and the iOS motion permission                         |
 | `src/lib/wakelock.ts`                   | Keeps the screen on while the sign plays                              |
 | `src/lib/presets.ts`                    | Sizes, looks, frames, colors, blink styles, slider ranges, stickers   |

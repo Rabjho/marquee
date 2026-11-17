@@ -16,7 +16,7 @@ import {
 	type LookId,
 	type SizeId
 } from './presets';
-import type { Drawing, Stroke } from './drawing';
+import { trimmed, type Drawing, type Stroke } from './drawing';
 
 export type { Drawing, Stroke };
 
@@ -27,11 +27,16 @@ export type { Drawing, Stroke };
 export type Entry = { id: string; text: string; drawing?: Drawing; on: boolean };
 /** What the sign shows. */
 export type Item = { text: string; drawing?: Drawing };
+/** Whether Go shows the text box or the drawing pad. */
+export type Mode = 'text' | 'draw';
 
 type Saved = {
+	mode: Mode;
 	/** What is in the text box. */
 	draft: string;
-	/** The saved message the text box is editing, if any: Go then updates it in place. */
+	/** What is on the drawing pad: strokes on the full strip, not yet trimmed. */
+	sketch: Stroke[];
+	/** The saved entry being edited, if any: Go then updates it in place. */
 	editingId: string | null;
 	entries: Entry[];
 	size: SizeId;
@@ -124,9 +129,11 @@ function load(): Saved {
 			.filter(hasContent);
 	}
 	entries = entries.filter(hasContent);
-	const editingId = entries.some((e) => e.id === raw.editingId && !e.drawing) ? raw.editingId! : null;
+	const editingId = entries.some((e) => e.id === raw.editingId) ? raw.editingId! : null;
 	return {
+		mode: raw.mode === 'draw' ? 'draw' : 'text',
 		draft,
+		sketch: loadDrawing({ strokes: raw.sketch })?.strokes ?? [],
 		editingId,
 		entries,
 		size: oneOf(SIZES, raw.size, 'big'),
@@ -154,8 +161,13 @@ export const toItem = (entry: Pick<Entry, 'text' | 'drawing'>): Item => ({
 	drawing: entry.drawing
 });
 
+/** Two drawings are the same when their strokes are. */
+const sameDrawing = (a: Drawing, b: Drawing) => JSON.stringify(a.strokes) === JSON.stringify(b.strokes);
+
 class Store {
+	mode = $state<Mode>('text');
 	draft = $state('');
+	sketch = $state<Stroke[]>([]);
 	editingId = $state<string | null>(null);
 	entries = $state<Entry[]>([]);
 	size = $state<SizeId>('big');
@@ -185,44 +197,63 @@ class Store {
 		return this.entries.filter((e) => e.on);
 	}
 
-	/** The saved message being edited in the text box, if any. */
+	/** The saved entry being edited, if any. */
 	get editing(): Entry | undefined {
 		return this.entries.find((e) => e.id === this.editingId);
 	}
 
+	/** What Go shows: the text box or the drawing pad, depending on the mode. */
+	get current(): Item | null {
+		if (this.mode === 'draw') {
+			return this.sketch.length ? { text: '', drawing: trimmed($state.snapshot(this.sketch)) } : null;
+		}
+		const text = clean(this.draft);
+		return text ? { text } : null;
+	}
+
 	/**
-	 * Keeps the message in the text box, as it is played. When editing a saved message it
-	 * replaces that one; otherwise it goes at the top, unless the same message is already saved.
+	 * Keeps what Go shows, as it is played. When editing a saved entry it replaces that one;
+	 * otherwise it goes at the top, unless the same message or drawing is already saved.
 	 */
 	record() {
-		const text = clean(this.draft);
-		if (!text) return;
+		const item = this.current;
+		if (!item) return;
 		const editing = this.editing;
 		if (editing) {
-			editing.text = text;
-		} else if (!this.entries.some((e) => !e.drawing && clean(e.text) === text)) {
-			this.entries.unshift(newEntry(text));
+			editing.text = item.text;
+			editing.drawing = item.drawing;
+		} else if (
+			!this.entries.some((e) =>
+				item.drawing ? e.drawing && sameDrawing(e.drawing, item.drawing) : !e.drawing && clean(e.text) === item.text
+			)
+		) {
+			this.entries.unshift(newEntry(item.text, item.drawing));
 		}
 	}
 
-	/** Puts a saved message in the text box, to be changed and played again. */
+	/** Puts a saved entry in the text box or on the drawing pad, to be changed and played again. */
 	edit(id: string) {
 		const entry = this.entries.find((e) => e.id === id);
-		if (!entry || entry.drawing) return;
-		this.draft = entry.text;
+		if (!entry) return;
+		if (entry.drawing) {
+			this.mode = 'draw';
+			this.sketch = $state.snapshot(entry.drawing.strokes);
+		} else {
+			this.mode = 'text';
+			this.draft = entry.text;
+		}
 		this.editingId = id;
 	}
 
-	/** Lets go of the saved message, keeping the text box as it is. */
-	stopEditing() {
-		this.editingId = null;
+	/** Switches between text and drawing. Editing a saved entry of the other kind stops. */
+	setMode(mode: Mode) {
+		this.mode = mode;
+		if (this.editing && !!this.editing.drawing !== (mode === 'draw')) this.stopEditing();
 	}
 
-	/** Saves a drawing: over the entry with this id, or as a new one at the top. */
-	saveDrawing(id: string | null, drawing: Drawing) {
-		const existing = this.entries.find((e) => e.id === id);
-		if (existing) existing.drawing = drawing;
-		else this.entries.unshift(newEntry('', drawing));
+	/** Lets go of the saved entry, keeping the text box and drawing pad as they are. */
+	stopEditing() {
+		this.editingId = null;
 	}
 
 	remove(id: string) {
@@ -239,7 +270,9 @@ class Store {
 
 	save() {
 		const saved: Saved = {
+			mode: this.mode,
 			draft: this.draft,
+			sketch: this.sketch,
 			editingId: this.editingId,
 			entries: this.entries,
 			size: this.size,

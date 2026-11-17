@@ -19,18 +19,17 @@
 		STICKERS
 	} from '../lib/presets';
 	import { shake } from '../lib/shake.svelte';
-	import { clean, hasContent, store, toItem, type Drawing, type Entry, type Item } from '../lib/store.svelte';
+	import { clean, hasContent, store, toItem, type Entry, type Item } from '../lib/store.svelte';
 
 	/** What is on the sign right now, or null while editing. */
 	let playing = $state<Item[] | null>(null);
-	/** The drawing pad, when open: for a new drawing (id null) or a saved one. */
-	let drawing = $state<{ id: string | null; drawing?: Drawing } | null>(null);
 	let notice = $state('');
 	let showInstallHint = $state(false);
 	let showQr = $state(false);
 	/** The QR library, loaded the first time a code is asked for to keep the first load small. */
 	let qrcode = $state.raw<typeof import('qrcode-generator') | null>(null);
-	let input = $state<HTMLTextAreaElement>()!;
+	/** The text box, while in text mode. */
+	let input = $state<HTMLTextAreaElement>();
 	/** Bumped on every Go, which replaces the text box with a fresh one. See `play`. */
 	let textBoxKey = $state(0);
 	let previewBlinking = $state(false);
@@ -53,6 +52,7 @@
 	function readSharedLink() {
 		const shared = clean(new URLSearchParams(location.hash.slice(1)).get('t') ?? '');
 		if (!shared) return;
+		store.setMode('text');
 		store.draft = shared;
 		store.stopEditing();
 	}
@@ -61,13 +61,13 @@
 		readSharedLink();
 		// iOS has no install prompt. `navigator.standalone` only exists there.
 		showInstallHint = 'standalone' in navigator && !navigator.standalone;
-		input.focus();
+		input?.focus();
 	});
 
 	function play(entries: Pick<Entry, 'text' | 'drawing'>[]) {
 		const items = entries.filter(hasContent).map(toItem);
 		if (items.length === 0) {
-			input.focus();
+			input?.focus();
 			return;
 		}
 		// Asked from inside the tap, as iOS requires for the motion permission prompt.
@@ -79,35 +79,34 @@
 		playing = items;
 	}
 
-	/** Plays the text box and keeps the message in the saved list. */
+	/** Shows the text box or the drawing, and keeps it in the saved list. */
 	function go() {
-		play([{ text: store.draft }]);
-		if (!playing) return;
+		const item = store.current;
+		if (!item) {
+			input?.focus();
+			return;
+		}
+		play([item]);
 		store.record();
-		// Done with the saved message: what is typed next is a new one.
+		// Done with the saved entry: what comes next is a new one.
 		store.stopEditing();
-	}
-
-	function openDrawing(id: string | null) {
-		drawing = { id, drawing: store.entries.find((e) => e.id === id)?.drawing };
-	}
-
-	function saveDrawing(result: Drawing) {
-		store.saveDrawing(drawing?.id ?? null, result);
-		drawing = null;
 	}
 
 	/** Back to the text box, as the sign closes. */
 	async function stop() {
 		playing = null;
 		await tick();
-		input.focus();
+		input?.focus();
 	}
 
-	async function focusTextBox() {
+	/** A saved entry was loaded for editing: bring the text box or pad into view. */
+	async function showEditor() {
 		await tick();
-		input.focus();
+		scrollTo({ top: 0 });
+		input?.focus({ preventScroll: true });
 	}
+
+	const kind = $derived(store.mode === 'draw' ? 'drawing' : 'message');
 
 	/** The link that carries the message in the text box, as /#t=HELLO. */
 	const shareUrl = $derived.by(() => {
@@ -163,7 +162,7 @@
 <!-- A shared link opened while the app is already showing only changes the hash. -->
 <svelte:window onhashchange={readSharedLink} />
 
-<main class="mx-auto flex w-full max-w-md flex-col gap-8 px-4 pt-4 pb-12" inert={playing !== null || drawing !== null}>
+<main class="mx-auto flex w-full max-w-md flex-col gap-8 px-4 pt-4 pb-12" inert={playing !== null}>
 	<h1 class="sr-only">Marquee</h1>
 
 	<form
@@ -173,13 +172,38 @@
 			go();
 		}}
 	>
+		<fieldset class="grid grid-cols-2 gap-2">
+			<legend class="sr-only">Show a message or a drawing</legend>
+			{#each [{ id: 'text', label: 'Text' }, { id: 'draw', label: 'Drawing' }] as const as option (option.id)}
+				<label
+					class="relative flex min-h-12 cursor-pointer items-center justify-center rounded-lg border border-line-strong bg-surface px-2 text-lg font-semibold has-checked:border-fg has-checked:bg-fg has-checked:text-bg has-focus-visible:outline-2 has-focus-visible:outline-offset-2 has-focus-visible:outline-focus"
+				>
+					<input
+						class="absolute inset-0 cursor-pointer opacity-0"
+						type="radio"
+						name="mode"
+						value={option.id}
+						checked={store.mode === option.id}
+						onchange={() => store.setMode(option.id)}
+					/>
+					{option.label}
+				</label>
+			{/each}
+		</fieldset>
+
 		<div class="flex flex-col gap-2">
 			<div class="flex min-h-12 items-center justify-between gap-2">
-				<label for="message" class="font-semibold text-fg-muted">
-					{store.editing ? 'Editing a saved message' : 'Your message'}
-				</label>
+				{#if store.mode === 'text'}
+					<label for="message" class="font-semibold text-fg-muted">
+						{store.editing ? 'Editing a saved message' : 'Your message'}
+					</label>
+				{:else}
+					<p class="font-semibold text-fg-muted">
+						{store.editing ? 'Editing a saved drawing' : 'Draw with your finger'}
+					</p>
+				{/if}
 				{#if store.editing}
-					<!-- Go replaces the saved message while editing; this keeps the original, and Go adds a new one. -->
+					<!-- Go replaces the saved entry while editing; this keeps the original, and Go adds a new one. -->
 					<button
 						type="button"
 						class="min-h-12 cursor-pointer rounded-lg px-3 text-lg font-semibold text-brand active:bg-surface"
@@ -189,33 +213,38 @@
 					</button>
 				{/if}
 			</div>
-			{#key textBoxKey}
-				<textarea
-					id="message"
-					bind:this={input}
-					bind:value={store.draft}
-					class="w-full resize-none rounded-lg border border-line-strong bg-surface p-4 text-2xl font-semibold placeholder:text-fg-muted"
-					rows="2"
-					placeholder="TAXI PLEASE"
-					enterkeyhint="go"
-					autocapitalize="characters"
-					autocomplete="off"
-					dir="auto"
-					onkeydown={(event) => {
-						if (event.key === 'Enter' && !event.isComposing) {
-							event.preventDefault();
-							go();
-						}
-					}}
-				></textarea>
-			{/key}
+			{#if store.mode === 'text'}
+				{#key textBoxKey}
+					<textarea
+						id="message"
+						bind:this={input}
+						bind:value={store.draft}
+						class="w-full resize-none rounded-lg border border-line-strong bg-surface p-4 text-2xl font-semibold placeholder:text-fg-muted"
+						rows="2"
+						placeholder="TAXI PLEASE"
+						enterkeyhint="go"
+						autocapitalize="characters"
+						autocomplete="off"
+						dir="auto"
+						onkeydown={(event) => {
+							if (event.key === 'Enter' && !event.isComposing) {
+								event.preventDefault();
+								go();
+							}
+						}}
+					></textarea>
+				{/key}
+			{:else}
+				<!-- A fresh pad for each saved drawing, so it starts at the beginning of the strip. -->
+				{#key store.editingId}
+					<DrawingPad>{@render goButton()}</DrawingPad>
+				{/key}
+			{/if}
 		</div>
 
-		<button
-			class="min-h-24 cursor-pointer rounded-lg bg-brand text-4xl font-black text-on-brand hover:bg-brand-hover active:bg-brand-hover"
-		>
-			Go
-		</button>
+		{#if store.mode === 'text'}
+			{@render goButton()}
+		{/if}
 
 		{#if shake.status === 'denied'}
 			<p class="text-fg-muted">
@@ -225,29 +254,40 @@
 		{/if}
 	</form>
 
-	<section class="flex flex-col gap-2">
-		<h2 class="font-semibold text-fg-muted">Stickers</h2>
-		<div class="grid grid-cols-5 gap-2">
-			{#each STICKERS as sticker (sticker)}
-				<button
-					class="min-h-12 cursor-pointer rounded-lg bg-surface text-2xl active:bg-line-strong"
-					aria-label="Add {sticker}"
-					onclick={() => (store.draft += sticker)}
-				>
-					{sticker}
-				</button>
-			{/each}
-		</div>
-	</section>
+	{#snippet goButton()}
+		<button
+			class="min-h-24 cursor-pointer rounded-lg bg-brand text-4xl font-black text-on-brand hover:bg-brand-hover active:bg-brand-hover"
+			aria-label="Go: show this {kind}"
+		>
+			Go
+		</button>
+	{/snippet}
 
-	<SavedList onplay={play} onedit={focusTextBox} ondraw={openDrawing} />
+	{#if store.mode === 'text'}
+		<section class="flex flex-col gap-2">
+			<h2 class="font-semibold text-fg-muted">Stickers</h2>
+			<div class="grid grid-cols-5 gap-2">
+				{#each STICKERS as sticker (sticker)}
+					<button
+						class="min-h-12 cursor-pointer rounded-lg bg-surface text-2xl active:bg-line-strong"
+						aria-label="Add {sticker}"
+						onclick={() => (store.draft += sticker)}
+					>
+						{sticker}
+					</button>
+				{/each}
+			</div>
+		</section>
+	{/if}
+
+	<SavedList onplay={play} onedit={showEditor} />
 
 	<section class="flex flex-col gap-6">
 		<h2 class="font-semibold text-fg-muted">Style</h2>
 		<!-- Stays in view while scrolling through the options below it. -->
 		{#if !playing}
 			<div class="sticky top-0 z-10 -mx-4 -mt-4 bg-bg px-4 py-2">
-				<Preview text={clean(store.draft) || 'TAXI PLEASE'} blinking={previewBlinking} />
+				<Preview item={store.current ?? { text: 'TAXI PLEASE' }} blinking={previewBlinking} />
 			</div>
 		{/if}
 		<Choice legend="Text size" name="size" options={SIZES} bind:value={store.size} />
@@ -347,7 +387,8 @@
 	</section>
 
 	<footer class="flex flex-col gap-4">
-		{#if clean(store.draft)}
+		<!-- A link can only carry text. -->
+		{#if store.mode === 'text' && clean(store.draft)}
 			<div class="grid auto-cols-fr grid-flow-col gap-2">
 				<button class={secondary} onclick={share}>Share link</button>
 				<button class={secondary} aria-expanded={showQr} onclick={toggleQr}>
@@ -379,8 +420,4 @@
 
 {#if playing}
 	<Stage items={playing} onstop={stop} />
-{/if}
-
-{#if drawing}
-	<DrawingPad drawing={drawing.drawing} onsave={saveDrawing} oncancel={() => (drawing = null)} />
 {/if}

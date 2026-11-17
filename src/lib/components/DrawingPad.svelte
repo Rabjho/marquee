@@ -1,26 +1,22 @@
 <script lang="ts">
 	// Finger drawing with the bare minimum: one brush, a few inks, undo and clear.
-	// The drawing is a long strip. The pad shows one stretch of it; two fingers drag it along.
-	import { onMount } from 'svelte';
-	import { pathData, trimmed, type Drawing, type Stroke } from '../drawing';
+	// The drawing is a long strip. The pad shows one stretch of it; two fingers drag it along,
+	// and it scrolls by itself while a stroke is held near either edge.
+	// What is drawn goes straight into the store, where Go picks it up.
+	import type { Snippet } from 'svelte';
+	import { pathData, type Stroke } from '../drawing';
 	import { DRAWING, INKS } from '../presets';
 	import { store } from '../store.svelte';
 
-	let {
-		drawing,
-		onsave,
-		oncancel
-	}: {
-		drawing?: Drawing;
-		onsave: (drawing: Drawing) => void;
-		oncancel: () => void;
-	} = $props();
+	/** Shown between the pad's tools: the Go button. */
+	let { children }: { children: Snippet } = $props();
 
 	/** How far one press of an arrow key moves along the strip. */
 	const STEP = DRAWING.view / 4;
-
-	// svelte-ignore state_referenced_locally
-	let strokes = $state<Stroke[]>(drawing ? $state.snapshot(drawing.strokes) : []);
+	/** The share of the pad's width at each side where a held stroke scrolls the pad. */
+	const EDGE = 0.15;
+	/** Scroll speed with the finger right at the edge, in strip units per second. */
+	const EDGE_SPEED = DRAWING.view;
 	/** The stroke under the finger right now. */
 	let current = $state<Stroke | null>(null);
 	let inkId = $state<(typeof INKS)[number]['id'] | 'custom'>('sign');
@@ -41,7 +37,7 @@
 	const inkColor = $derived(
 		inkId === 'custom' ? store.customInk : (INKS.find((i) => i.id === inkId) ?? INKS[0]).value
 	);
-	const all = $derived(current ? [...strokes, current] : strokes);
+	const all = $derived(current ? [...store.sketch, current] : store.sketch);
 	/** The length of the strip so far: what has been drawn, or where the pad is, whichever is further. */
 	const length = $derived(
 		Math.max(offset + DRAWING.view, ...all.flatMap((s) => s.points.filter((_, i) => i % 2 === 0)))
@@ -80,6 +76,7 @@
 		fingers.set(event.pointerId, event.clientX);
 		if (fingers.size === 1) {
 			current = { color: inkColor, points: point(event) };
+			followEdge(event);
 		} else {
 			// A second finger means dragging, so the mark the first one began is dropped.
 			current = null;
@@ -91,6 +88,7 @@
 		if (!fingers.has(event.pointerId)) return;
 		if (!panning) {
 			current?.points.push(...point(event));
+			if (current) followEdge(event);
 			return;
 		}
 		const before = middle();
@@ -101,9 +99,37 @@
 	function end(event: PointerEvent) {
 		fingers.delete(event.pointerId);
 		if (fingers.size > 0) return;
-		if (current && !panning) strokes.push(current);
+		if (current && !panning) store.sketch.push($state.snapshot(current));
 		current = null;
 		panning = false;
+		lastPointer = null;
+	}
+
+	/** Where the drawing finger last was, while a stroke is going. */
+	let lastPointer: PointerEvent | null = null;
+	let edgeFrame = 0;
+
+	/**
+	 * While a stroke is held near an edge, the pad keeps scrolling that way and the stroke
+	 * follows, so one stroke can run as long as the finger stays down.
+	 */
+	function followEdge(event: PointerEvent) {
+		lastPointer = event;
+		if (edgeFrame) return;
+		let last = performance.now();
+		const step = (now: number) => {
+			edgeFrame = 0;
+			if (!current || panning || !lastPointer) return;
+			const box = canvas.getBoundingClientRect();
+			const at = (lastPointer.clientX - box.left) / box.width;
+			const push = at > 1 - EDGE ? Math.min((at - (1 - EDGE)) / EDGE, 1) : at < EDGE ? -Math.min((EDGE - at) / EDGE, 1) : 0;
+			if (push === 0 || (push < 0 && offset === 0)) return;
+			pan((push * EDGE_SPEED * Math.min(now - last, 50)) / 1000);
+			last = now;
+			current.points.push(...point(lastPointer));
+			edgeFrame = requestAnimationFrame(step);
+		};
+		edgeFrame = requestAnimationFrame(step);
 	}
 
 	/**
@@ -130,146 +156,124 @@
 		else if (event.key === 'ArrowLeft') pan(-STEP);
 	}
 
-	onMount(() => canvas.focus());
-
 	const secondary =
 		'min-h-14 cursor-pointer rounded-lg border border-line-strong px-4 text-lg font-semibold active:bg-surface disabled:opacity-40';
 </script>
 
-<svelte:window onkeydown={(event) => event.key === 'Escape' && oncancel()} />
+<div class="flex flex-col gap-4">
+	<!-- The canvas is a drawing surface, so it takes pointer and key input by design. -->
+	<!-- svelte-ignore a11y_no_noninteractive_tabindex, a11y_no_noninteractive_element_interactions -->
+	<svg
+		bind:this={canvas}
+		class="aspect-3/2 w-full cursor-crosshair touch-none rounded-lg border border-line-strong"
+		viewBox="{offset} 0 {DRAWING.view} {DRAWING.height}"
+		style:background-color={sign.bg}
+		style:color={sign.fg}
+		fill="none"
+		stroke-width={DRAWING.brush}
+		stroke-linecap="round"
+		stroke-linejoin="round"
+		role="application"
+		aria-label="Drawing canvas"
+		tabindex="0"
+		onkeydown={key}
+		onpointerdown={start}
+		onpointermove={move}
+		onpointerup={end}
+		onpointercancel={end}
+	>
+		{#each all as stroke, i (i)}
+			<path d={pathData(stroke.points)} stroke={stroke.color ?? 'currentColor'} />
+		{/each}
+	</svg>
 
-<div
-	class="fixed inset-0 z-50 overflow-y-auto bg-bg"
-	role="dialog"
-	aria-modal="true"
-	aria-labelledby="draw-title"
->
-	<div class="mx-auto flex w-full max-w-md flex-col gap-4 px-4 pt-4 pb-12">
-		<h2 id="draw-title" class="font-semibold text-fg-muted">Draw with your finger</h2>
-
-		<!-- The canvas is a drawing surface, so it takes pointer and key input by design. -->
-		<!-- svelte-ignore a11y_no_noninteractive_tabindex, a11y_no_noninteractive_element_interactions -->
+	<!-- The whole strip in miniature, with the stretch shown above marked on it. -->
+	<div class="flex flex-col gap-2">
+		<!-- Pressing or dragging on it moves the pad; the arrow keys do the same on the canvas. -->
 		<svg
-			bind:this={canvas}
-			class="aspect-3/2 w-full cursor-crosshair touch-none rounded-lg border border-line-strong"
-			viewBox="{offset} 0 {DRAWING.view} {DRAWING.height}"
-			style:background-color={sign.bg}
+			bind:this={minimap}
+			bind:clientWidth={minimapWidth}
+			bind:clientHeight={minimapHeight}
+			class="h-12 w-full cursor-grab touch-none rounded-lg bg-surface active:cursor-grabbing"
+			viewBox="0 0 {span} {DRAWING.height}"
+			preserveAspectRatio="xMinYMid meet"
 			style:color={sign.fg}
 			fill="none"
 			stroke-width={DRAWING.brush}
 			stroke-linecap="round"
 			stroke-linejoin="round"
-			role="application"
-			aria-label="Drawing canvas"
-			tabindex="0"
-			onkeydown={key}
-			onpointerdown={start}
-			onpointermove={move}
-			onpointerup={end}
-			onpointercancel={end}
+			aria-hidden="true"
+			onpointerdown={minimapStart}
+			onpointermove={minimapMove}
+			onpointerup={() => (grab = null)}
+			onpointercancel={() => (grab = null)}
 		>
+			<rect width={length} height={DRAWING.height} fill={sign.bg} stroke="none" />
 			{#each all as stroke, i (i)}
 				<path d={pathData(stroke.points)} stroke={stroke.color ?? 'currentColor'} />
 			{/each}
+			<rect
+				x={offset + 2}
+				y="2"
+				width={DRAWING.view - 4}
+				height={DRAWING.height - 4}
+				stroke="var(--color-brand)"
+				stroke-width="4"
+				stroke-linecap="butt"
+			/>
 		</svg>
+		<p class="text-fg-muted">Drag the strip above, or the pad with two fingers, for more room.</p>
+	</div>
 
-		<!-- The whole strip in miniature, with the stretch shown above marked on it. -->
-		<div class="flex flex-col gap-2">
-			<!-- Pressing or dragging on it moves the pad; the arrow keys do the same on the canvas. -->
-			<svg
-				bind:this={minimap}
-				bind:clientWidth={minimapWidth}
-				bind:clientHeight={minimapHeight}
-				class="h-12 w-full cursor-grab touch-none rounded-lg bg-surface active:cursor-grabbing"
-				viewBox="0 0 {span} {DRAWING.height}"
-				preserveAspectRatio="xMinYMid meet"
-				style:color={sign.fg}
-				fill="none"
-				stroke-width={DRAWING.brush}
-				stroke-linecap="round"
-				stroke-linejoin="round"
-				aria-hidden="true"
-				onpointerdown={minimapStart}
-				onpointermove={minimapMove}
-				onpointerup={() => (grab = null)}
-				onpointercancel={() => (grab = null)}
-			>
-				<rect width={length} height={DRAWING.height} fill={sign.bg} stroke="none" />
-				{#each all as stroke, i (i)}
-					<path d={pathData(stroke.points)} stroke={stroke.color ?? 'currentColor'} />
-				{/each}
-				<rect
-					x={offset + 2}
-					y="2"
-					width={DRAWING.view - 4}
-					height={DRAWING.height - 4}
-					stroke="var(--color-brand)"
-					stroke-width="4"
-					stroke-linecap="butt"
-				/>
-			</svg>
-			<p class="text-fg-muted">Drag the strip above, or the pad with two fingers, for more room.</p>
-		</div>
+	<div class="grid grid-cols-2 gap-2">
+		<button type="button" class={secondary} disabled={store.sketch.length === 0} onclick={() => store.sketch.pop()}>
+			Undo
+		</button>
+		<button type="button" class={secondary} disabled={store.sketch.length === 0} onclick={() => (store.sketch = [])}>
+			Clear
+		</button>
+	</div>
 
-		<fieldset>
-			<legend class="mb-2 font-semibold text-fg-muted">Ink</legend>
-			<div class="grid grid-cols-5 gap-2">
-				{#each INKS as option (option.id)}
-					<label
-						class="relative flex min-h-14 cursor-pointer items-center justify-center rounded-lg border border-line-strong text-2xl font-black has-checked:border-4 has-checked:border-fg has-focus-visible:outline-2 has-focus-visible:outline-offset-2 has-focus-visible:outline-focus"
-						style:background-color={sign.bg}
-						style:color={option.value ?? sign.fg}
-					>
-						<input
-							class="absolute inset-0 cursor-pointer opacity-0"
-							type="radio"
-							name="ink"
-							value={option.id}
-							bind:group={inkId}
-						/>
-						<span aria-hidden="true">{inkId === option.id ? '✓' : '●'}</span>
-						<span class="sr-only">{option.label}</span>
-					</label>
-				{/each}
+	{@render children()}
+
+	<fieldset>
+		<legend class="mb-2 font-semibold text-fg-muted">Ink</legend>
+		<div class="grid grid-cols-5 gap-2">
+			{#each INKS as option (option.id)}
 				<label
-					class="relative col-span-5 flex min-h-14 cursor-pointer items-center justify-center gap-3 rounded-lg border bg-bg text-2xl font-black has-focus-visible:outline-2 has-focus-visible:outline-offset-2 has-focus-visible:outline-focus {inkId ===
-					'custom'
-						? 'border-4 border-fg'
-						: 'border-line-strong'}"
-					style:color={store.customInk}
+					class="relative flex min-h-14 cursor-pointer items-center justify-center rounded-lg border border-line-strong text-2xl font-black has-checked:border-4 has-checked:border-fg has-focus-visible:outline-2 has-focus-visible:outline-offset-2 has-focus-visible:outline-focus"
+					style:background-color={sign.bg}
+					style:color={option.value ?? sign.fg}
 				>
 					<input
-						class="absolute inset-0 size-full cursor-pointer opacity-0"
-						type="color"
-						aria-label={inkId === 'custom' ? 'Custom ink, selected' : 'Custom ink'}
-						bind:value={store.customInk}
-						onclick={() => (inkId = 'custom')}
-						oninput={() => (inkId = 'custom')}
+						class="absolute inset-0 cursor-pointer opacity-0"
+						type="radio"
+						name="ink"
+						value={option.id}
+						bind:group={inkId}
 					/>
-					<span aria-hidden="true">{inkId === 'custom' ? '✓' : '●'}</span>
-					<span class="text-lg text-fg">Custom ink</span>
+					<span aria-hidden="true">{inkId === option.id ? '✓' : '●'}</span>
+					<span class="sr-only">{option.label}</span>
 				</label>
-			</div>
-		</fieldset>
-
-		<div class="grid grid-cols-2 gap-2">
-			<button class={secondary} disabled={strokes.length === 0} onclick={() => strokes.pop()}>
-				Undo
-			</button>
-			<button class={secondary} disabled={strokes.length === 0} onclick={() => (strokes = [])}>
-				Clear
-			</button>
-		</div>
-
-		<div class="grid grid-cols-2 gap-2">
-			<button class={secondary} onclick={oncancel}>Cancel</button>
-			<button
-				class="min-h-14 cursor-pointer rounded-lg bg-brand px-4 text-lg font-black text-on-brand hover:bg-brand-hover active:bg-brand-hover disabled:opacity-40"
-				disabled={strokes.length === 0}
-				onclick={() => onsave(trimmed($state.snapshot(strokes)))}
+			{/each}
+			<label
+				class="relative col-span-5 flex min-h-14 cursor-pointer items-center justify-center gap-3 rounded-lg border bg-bg text-2xl font-black has-focus-visible:outline-2 has-focus-visible:outline-offset-2 has-focus-visible:outline-focus {inkId ===
+				'custom'
+					? 'border-4 border-fg'
+					: 'border-line-strong'}"
+				style:color={store.customInk}
 			>
-				Done
-			</button>
+				<input
+					class="absolute inset-0 size-full cursor-pointer opacity-0"
+					type="color"
+					aria-label={inkId === 'custom' ? 'Custom ink, selected' : 'Custom ink'}
+					bind:value={store.customInk}
+					onclick={() => (inkId = 'custom')}
+					oninput={() => (inkId = 'custom')}
+				/>
+				<span aria-hidden="true">{inkId === 'custom' ? '✓' : '●'}</span>
+				<span class="text-lg text-fg">Custom ink</span>
+			</label>
 		</div>
-	</div>
+	</fieldset>
 </div>
