@@ -20,7 +20,6 @@
 	const EDGE_SPEED = DRAWING.view;
 	/** The stroke under the finger right now. */
 	let current = $state<Stroke | null>(null);
-	let inkId = $state<(typeof INKS)[number]['id'] | 'custom'>('sign');
 	/** Left edge of the stretch shown in the pad. */
 	let offset = $state(0);
 	let canvas: SVGSVGElement;
@@ -36,7 +35,7 @@
 
 	const sign = $derived(store.colors);
 	const inkColor = $derived(
-		inkId === 'custom' ? store.customInk : (INKS.find((i) => i.id === inkId) ?? INKS[0]).value
+		store.ink === 'custom' ? store.customColor : (INKS.find((i) => i.id === store.ink) ?? INKS[0]).value
 	);
 	const all = $derived(current ? [...store.sketch, current] : store.sketch);
 	/** The length of the strip so far: what has been drawn, or where the pad is, whichever is further. */
@@ -251,18 +250,18 @@
 						type="radio"
 						name="ink"
 						value={option.id}
-						bind:group={inkId}
+						bind:group={store.ink}
 					/>
-					<span aria-hidden="true">{inkId === option.id ? '✓' : '●'}</span>
+					<span aria-hidden="true">{store.ink === option.id ? '✓' : '●'}</span>
 					<span class="sr-only">{option.label}</span>
 				</label>
 			{/each}
 			<CustomSwatch
 				label="Custom ink"
-				bind:value={store.customInk}
-				selected={inkId === 'custom'}
+				bind:value={store.customColor}
+				selected={store.ink === 'custom'}
 				background={sign.bg}
-				onselect={() => (inkId = 'custom')}
+				onselect={() => (store.ink = 'custom')}
 			/>
 		</div>
 	</fieldset>

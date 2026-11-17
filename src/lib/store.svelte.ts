@@ -4,12 +4,14 @@ import {
 	COLORS,
 	DIRECTIONS,
 	DRAWING,
-	CUSTOM,
+	CUSTOM_COLOR,
+	INKS,
 	FRAMES,
 	LOOKS,
 	SIZES,
 	SPEED,
 	type BlinkId,
+	type InkId,
 	type SignColorId,
 	type DirectionId,
 	type FrameId,
@@ -43,10 +45,10 @@ type Saved = {
 	look: LookId;
 	frame: FrameId;
 	color: SignColorId;
-	/** The color picked with the custom option, used when `color` is 'custom'. */
+	/** The color picked with the custom option, for the sign and for the drawing ink. */
 	customColor: string;
-	/** The ink picked with the custom option in the drawing pad. */
-	customInk: string;
+	/** The ink chosen on the drawing pad. */
+	ink: InkId;
 	hdr: boolean;
 	speed: number;
 	direction: DirectionId;
@@ -140,8 +142,8 @@ function load(): Saved {
 		look: oneOf(LOOKS, raw.look, 'smooth'),
 		frame: oneOf(FRAMES, raw.frame, 'none'),
 		color: raw.color === 'custom' ? 'custom' : oneOf(COLORS, raw.color, 'white'),
-		customColor: hexOr(raw.customColor, CUSTOM.color),
-		customInk: hexOr(raw.customInk, CUSTOM.ink),
+		customColor: hexOr(raw.customColor, CUSTOM_COLOR),
+		ink: raw.ink === 'custom' ? 'custom' : oneOf(INKS, raw.ink, 'sign'),
 		hdr: raw.hdr === true,
 		speed: within(SPEED, LEGACY_SPEED[raw.speed as unknown as string] ?? raw.speed),
 		direction: oneOf(DIRECTIONS, raw.direction, 'left'),
@@ -177,8 +179,8 @@ class Store {
 	look = $state<LookId>('smooth');
 	frame = $state<FrameId>('none');
 	color = $state<SignColorId>('white');
-	customColor = $state<string>(CUSTOM.color);
-	customInk = $state<string>(CUSTOM.ink);
+	customColor = $state<string>(CUSTOM_COLOR);
+	ink = $state<InkId>('sign');
 	hdr = $state(false);
 	speed = $state<number>(SPEED.initial);
 	direction = $state<DirectionId>('left');
@@ -287,7 +289,7 @@ class Store {
 			frame: this.frame,
 			color: this.color,
 			customColor: this.customColor,
-			customInk: this.customInk,
+			ink: this.ink,
 			hdr: this.hdr,
 			speed: this.speed,
 			direction: this.direction,
