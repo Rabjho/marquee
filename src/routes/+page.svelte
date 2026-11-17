@@ -163,6 +163,17 @@
 <main class="mx-auto flex w-full max-w-md flex-col gap-8 px-4 pt-4 pb-12" inert={playing !== null}>
 	<h1 class="sr-only">Marquee</h1>
 
+	<!-- The sign as it will look, pinned to the top so every change shows in it while scrolling.
+	     An empty drawing pad shows a blank sign; an empty text box shows the placeholder. -->
+	{#if !playing}
+		<div class="sticky top-0 z-10 -mx-4 -mt-4 -mb-4 bg-bg px-4 pt-4 pb-2">
+			<Preview
+				item={store.current ?? (store.mode === 'text' ? { text: 'TAXI PLEASE' } : null)}
+				blinking={previewBlinking}
+			/>
+		</div>
+	{/if}
+
 	<form
 		class="flex flex-col gap-4"
 		onsubmit={(event) => {
@@ -264,12 +275,6 @@
 
 	<section class="flex flex-col gap-6">
 		<h2 class={label}>Style</h2>
-		<!-- Stays in view while scrolling through the options below it. -->
-		{#if !playing}
-			<div class="sticky top-0 z-10 -mx-4 -mt-4 bg-bg px-4 py-2">
-				<Preview item={store.current ?? { text: 'TAXI PLEASE' }} blinking={previewBlinking} />
-			</div>
-		{/if}
 		<Choice legend="Size" name="size" options={SIZES} bind:value={store.size} />
 		<Choice legend="Look" name="look" options={LOOKS} bind:value={store.look} />
 		<Choice legend="Frame" name="frame" options={FRAMES} bind:value={store.frame} />

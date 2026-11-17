@@ -4,7 +4,7 @@
 	import type { Item } from '../store.svelte';
 	import Sign from './Sign.svelte';
 
-	let { item, blinking }: { item: Item; blinking: boolean } = $props();
+	let { item, blinking }: { item: Item | null; blinking: boolean } = $props();
 
 	let width = $state(0);
 
