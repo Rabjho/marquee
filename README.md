@@ -73,7 +73,6 @@ magick -background black -density 300 /tmp/maskable.svg -resize 512x512 static/i
   setup is not right yet: the text box doubles as "the selected playlist card", and
   drawings sit in the same list while behaving differently.
 - Some way to save old banners and add to a playlist locally?
-- Shaking should be a toggle for the blinking/strobe.
 
 ## HDR assets
 

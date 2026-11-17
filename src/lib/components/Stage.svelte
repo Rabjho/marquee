@@ -1,7 +1,7 @@
 <script lang="ts">
 	// The sign itself: full screen, nothing but the message. Tap anywhere to stop.
 	import { onMount } from 'svelte';
-	import { blinkMs, COLORS } from '../presets';
+	import { COLORS } from '../presets';
 	import { shake } from '../shake.svelte';
 	import { store, type Item } from '../store.svelte';
 	import { keepAwake } from '../wakelock';
@@ -19,7 +19,6 @@
 	let blinking = $state(false);
 	let stopButton: HTMLButtonElement;
 	let gapTimer: ReturnType<typeof setTimeout>;
-	let blinkTimer: ReturnType<typeof setTimeout>;
 
 	// The sign always runs along the long edge. Phones cannot be forced into landscape from
 	// a web page (iOS never allows it), so in portrait the sign is drawn rotated instead.
@@ -43,14 +42,11 @@
 		}, GAP_MS);
 	}
 
-	function blink() {
-		blinking = true;
-		clearTimeout(blinkTimer);
-		blinkTimer = setTimeout(() => (blinking = false), blinkMs(store.blinkRate));
-	}
+	/** Blinking stays on until the next shake or tap on Blink turns it off. */
+	const toggleBlink = () => (blinking = !blinking);
 
-	/** Shake, or its fallback button: blink a single message, skip ahead in a playlist. */
-	const trigger = () => (isPlaylist ? next() : blink());
+	/** Shake, or its fallback button: blinking on or off for a single message, next entry in a playlist. */
+	const trigger = () => (isPlaylist ? next() : toggleBlink());
 
 	onMount(() => {
 		stopButton.focus();
@@ -77,7 +73,6 @@
 			shake.onshake = null;
 			keepAwake(false);
 			clearTimeout(gapTimer);
-			clearTimeout(blinkTimer);
 		};
 	});
 </script>
@@ -118,7 +113,7 @@
 				style:color={color.fg}
 				onclick={trigger}
 			>
-				{isPlaylist ? 'Next' : 'Blink'}
+				{isPlaylist ? 'Next' : blinking ? 'Stop blinking' : 'Blink'}
 			</button>
 		{/if}
 	</div>

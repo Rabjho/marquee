@@ -83,8 +83,8 @@ export type BlinkId = (typeof BLINKS)[number]['id'];
 export type DirectionId = (typeof DIRECTIONS)[number]['id'];
 
 /**
- * How long a shake or a tap on Blink keeps the sign blinking, in milliseconds. Long enough
- * for at least four blinks, so a slow blink speed still reads as blinking and not as a glitch.
+ * How long the preview blinks to show a blink style, in milliseconds. Long enough for at
+ * least four blinks, so a slow blink speed still reads as blinking and not as a glitch.
  */
 export const blinkMs = (blinksPerSecond: number) =>
 	Math.max(2000, Math.round((4 / blinksPerSecond) * 1000));
