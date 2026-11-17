@@ -1,7 +1,7 @@
 <script lang="ts">
 	// The sign itself: full screen, nothing but the message. Tap anywhere to stop.
 	import { onMount } from 'svelte';
-		import { shake } from '../shake.svelte';
+	import { shake } from '../shake.svelte';
 	import { store, type Item } from '../store.svelte';
 	import { keepAwake } from '../wakelock';
 	import Sign from './Sign.svelte';
@@ -40,16 +40,16 @@
 		}, GAP_MS);
 	}
 
-	/** Blinking stays on until the next shake or tap on Blink turns it off. */
+	/**
+	 * Shake, or its fallback button, turns blinking on or off, in a playlist too. Blinking stays
+	 * on across playlist entries until the next shake; the playlist moves on by itself.
+	 */
 	const toggleBlink = () => (blinking = !blinking);
-
-	/** Shake, or its fallback button: blinking on or off for a single message, next entry in a playlist. */
-	const trigger = () => (isPlaylist ? next() : toggleBlink());
 
 	onMount(() => {
 		stopButton.focus();
 		keepAwake(true);
-		shake.onshake = trigger;
+		shake.onshake = toggleBlink;
 
 		// Where the browser allows it (Android), go full screen and turn to landscape.
 		const orientation = screen.orientation as ScreenOrientation & {
@@ -109,9 +109,9 @@
 				style:border-color={color.fg}
 				style:background-color={color.bg}
 				style:color={color.fg}
-				onclick={trigger}
+				onclick={toggleBlink}
 			>
-				{isPlaylist ? 'Next' : blinking ? 'Stop blinking' : 'Blink'}
+				{blinking ? 'Stop blinking' : 'Blink'}
 			</button>
 		{/if}
 	</div>
