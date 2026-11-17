@@ -282,6 +282,17 @@
 		<Choice legend="Size" name="size" options={SIZES} bind:value={store.size} />
 		<Choice legend="Look" name="look" options={LOOKS} bind:value={store.look} />
 		<Choice legend="Frame" name="frame" options={FRAMES} bind:value={store.frame} />
+		{#if store.frame !== 'none'}
+			<Choice
+				legend="Frame blink"
+				name="frame-blink"
+				options={[
+					{ id: 'off', label: 'Off' },
+					{ id: 'on', label: 'On', hint: 'The frame blinks on its own at the blink speed, whether the message blinks or not.' }
+				]}
+				bind:value={() => (store.frameBlink ? 'on' : 'off'), (value) => (store.frameBlink = value === 'on')}
+			/>
+		{/if}
 
 
 		<Choice

@@ -48,6 +48,7 @@
 		leftward: store.direction === 'left',
 		look: store.look,
 		frame: store.frame,
+		frameBlink: store.frameBlink,
 		hdr: store.hdr,
 		blink: store.blink,
 		blinkRate: store.blinkRate

@@ -49,6 +49,8 @@ type Saved = {
 	size: SizeId;
 	look: LookId;
 	frame: FrameId;
+	/** The frame blinks by itself, at the blink speed, whatever the message does. */
+	frameBlink: boolean;
 	color: SignColorId;
 	/** The color picked with the custom option. */
 	customColor: string;
@@ -159,6 +161,7 @@ function load(): Saved {
 		size: oneOf(SIZES, raw.size, 'big'),
 		look: oneOf(LOOKS, raw.look, 'smooth'),
 		frame: oneOf(FRAMES, raw.frame, 'none'),
+		frameBlink: raw.frameBlink === true,
 		color,
 		customColor,
 		hdr: raw.hdr === true,
@@ -205,6 +208,7 @@ class Store {
 	size = $state<SizeId>('big');
 	look = $state<LookId>('smooth');
 	frame = $state<FrameId>('none');
+	frameBlink = $state(false);
 	color = $state<SignColorId>('white');
 	customColor = $state<string>(CUSTOM_COLOR);
 	hdr = $state(false);
@@ -384,6 +388,7 @@ class Store {
 			size: this.size,
 			look: this.look,
 			frame: this.frame,
+			frameBlink: this.frameBlink,
 			color: this.color,
 			customColor: this.customColor,
 			hdr: this.hdr,

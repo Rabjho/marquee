@@ -1,5 +1,5 @@
 // Draws the sign onto a canvas, one frame at a time. Everything visual lives here:
-// the scrolling message, the looks (smooth, LED, ASCII), frames, blinking and HDR.
+// the scrolling message, the looks (smooth, circles, pixels, ASCII), frames, blinking and HDR.
 //
 // Only what is on screen is drawn each frame, so a message can be any length.
 
@@ -7,8 +7,9 @@ import { glyph, GLYPH_HEIGHT } from './font5x7';
 import { DRAWING } from './presets';
 import type { Item } from './store.svelte';
 
-export type Look = 'smooth' | 'led' | 'ascii';
-export type Frame = 'none' | 'line' | 'bulbs';
+/** 'led' is the circles look. */
+export type Look = 'smooth' | 'led' | 'pixels' | 'ascii';
+export type Frame = 'none' | 'line' | 'bulbs' | 'stripes';
 export type Blink = 'flash' | 'strobe' | 'invert';
 
 export type Settings = {
@@ -21,6 +22,8 @@ export type Settings = {
 	leftward: boolean;
 	look: Look;
 	frame: Frame;
+	/** The frame blinks by itself at `blinkRate`, whether or not the message is blinking. */
+	frameBlink: boolean;
 	/**
 	 * Extra-bright mode. The canvas is laid over an HDR white video. White on black cuts the
 	 * message out of an opaque black canvas, so the HDR white shines through the letter
@@ -40,7 +43,7 @@ const HDR = 'hdr';
  * A stretch of the message that is measured and drawn as one unit:
  * - text: letters in the system font, which take the ink color
  * - emoji: drawn in the system font with their own colors
- * - dots: letters in the 5×7 dot font (LED and ASCII looks)
+ * - dots: letters in the 5×7 dot font (the dot looks)
  */
 type Piece = { kind: 'text' | 'emoji' | 'dots'; text: string; x: number; width: number };
 type Layout = { key: string; pieces: Piece[]; width: number; rtl: boolean };
@@ -58,12 +61,25 @@ type Mode = {
 	dots: boolean;
 	/** Positions snap to multiples of this, so dots never land between cells. */
 	snap: number;
+	/** The thinnest a drawing's line may get, in layout units, so it never falls between dots. */
+	minLine: number;
 };
 
 /** How long a message that fits stays up before `onend`, when not looping. */
 const HOLD_MS = 3000;
 /** Frame bulbs advance this many times per second. */
 const CHASE_HZ = 3;
+/** Frame stripes travel round this many stripe widths per second. */
+const STRIPE_HZ = 1.5;
+/**
+ * In the dot looks a drawing is this many dots tall. Much finer than the 7-row letters: a
+ * drawing has thin lines and detail, which a few big dots would lose.
+ */
+const DRAWING_DOTS = 21;
+/** Each dot is drawn as this many samples across and down, to see how much of it is covered. */
+const SAMPLES = 4;
+/** The share of a dot that must be covered for it to light. */
+const COVERAGE = 0.3;
 const FONT = "system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif";
 const MONO = "ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace";
 const EMOJI =
@@ -111,9 +127,9 @@ function split(text: string, dots: boolean): Pick<Piece, 'kind' | 'text'>[] {
 const dotsWidth = (text: string) =>
 	Array.from(text).reduce((width, char) => width + glyph(char)!.length + 1, 0);
 
-/** The number of dot rows for a text size, so the 7-row font fills the same share of the sign. */
-function rowsFor(scale: number) {
-	const rows = Math.round(GLYPH_HEIGHT / scale);
+/** The number of dot rows for a size, so content `dots` tall fills the same share of the sign. */
+function rowsFor(dots: number, scale: number) {
+	const rows = Math.round(dots / scale);
 	// Odd, so the font sits exactly in the middle.
 	return rows % 2 ? rows : rows + 1;
 }
@@ -128,6 +144,9 @@ export class SignRenderer {
 	#ctx: CanvasRenderingContext2D;
 	#grid: HTMLCanvasElement;
 	#gridCtx: CanvasRenderingContext2D;
+	/** The unlit dots, which are the same every frame, drawn once and reused. */
+	#unlit = document.createElement('canvas');
+	#unlitKey = '';
 
 	#settings: Settings;
 	#item: Item | null = null;
@@ -290,7 +309,7 @@ export class SignRenderer {
 			ctx.save();
 			ctx.translate(x, (mode.bandHeight - mode.drawingHeight) / 2);
 			ctx.scale(k, k);
-			ctx.lineWidth = DRAWING.brush;
+			ctx.lineWidth = Math.max(DRAWING.brush, mode.minLine / k);
 			ctx.lineCap = ctx.lineJoin = 'round';
 			for (const { color, path } of this.#paths) {
 				this.#use(ctx, color ?? ink);
@@ -350,17 +369,23 @@ export class SignRenderer {
 			else if (s.blink === 'strobe') flood = phase < 0.2;
 			else if (phase < 0.5) [ink, ground] = [ground, ink];
 		}
+		// The frame keeps its own beat, so it can blink while the message stands still.
+		const frameOn = !s.frameBlink || ((time / 1000) * s.blinkRate) % 1 >= 0.5;
 
 		// The frame takes a margin; the message lives in the rectangle inside it.
-		const margin = s.frame === 'none' ? 0 : Math.round(height * (s.frame === 'bulbs' ? 0.1 : 0.07));
+		const share = { none: 0, line: 0.07, bulbs: 0.1, stripes: 0.08 }[s.frame];
+		const margin = Math.round(height * share);
 		const innerWidth = width - margin * 2;
 		const innerHeight = height - margin * 2;
 		const chase = s.frame === 'bulbs' ? Math.floor((time / 1000) * CHASE_HZ) % 3 : 0;
+		const stripes = s.frame === 'stripes' && frameOn ? ((time / 1000) * STRIPE_HZ) % 1 : 0;
 
-		// In the LED and ASCII looks the message is laid out on a coarse grid of font dots.
-		// An ASCII character is half as wide as it is tall, so there each dot is two cells wide.
+		// In the dot looks the message is laid out on a coarse grid of dots. Letters use the
+		// 7-row font; drawings get a much finer grid. An ASCII character is half as wide as it
+		// is tall, so there each dot is two cells wide.
 		const grid = s.look !== 'smooth';
-		const rows = rowsFor(s.scale);
+		const drawing = !!this.#item?.drawing;
+		const rows = rowsFor(drawing ? DRAWING_DOTS : GLYPH_HEIGHT, s.scale);
 		const cellHeight = innerHeight / rows;
 		const perDot = s.look === 'ascii' ? 2 : 1;
 		const cellWidth = cellHeight / perDot;
@@ -370,10 +395,11 @@ export class SignRenderer {
 					viewWidth: columns / perDot,
 					bandHeight: rows,
 					textHeight: GLYPH_HEIGHT + 1,
-					drawingHeight: rows,
+					drawingHeight: drawing ? DRAWING_DOTS : rows,
 					weight: 700,
 					dots: true,
-					snap: 1 / perDot
+					snap: 1 / perDot,
+					minLine: 1.3
 				}
 			: {
 					viewWidth: innerWidth,
@@ -382,7 +408,8 @@ export class SignRenderer {
 					drawingHeight: Math.round(innerHeight * s.scale),
 					weight: 900,
 					dots: false,
-					snap: 1 / 64
+					snap: 1 / 64,
+					minLine: 0
 				};
 
 		let x = 0;
@@ -395,7 +422,7 @@ export class SignRenderer {
 
 		// Skip the work when nothing visible has changed since the last frame.
 		const moving = !grid && show && this.#scrolls && !this.#still && !this.#ended;
-		const key = [x, show, flood, ink, ground, chase, width, height].join();
+		const key = [x, show, flood, ink, ground, chase, stripes, frameOn, width, height].join();
 		if (!moving && key === this.#lastKey) return;
 		this.#lastKey = key;
 
@@ -414,7 +441,7 @@ export class SignRenderer {
 			ctx.fillRect(0, 0, width, height);
 		}
 
-		this.#paintFrame(ctx, width, height, margin, chase, ink);
+		if (frameOn) this.#paintFrame(ctx, width, height, margin, chase, stripes, ink);
 
 		ctx.save();
 		ctx.beginPath();
@@ -432,8 +459,8 @@ export class SignRenderer {
 	}
 
 	/**
-	 * LED and ASCII looks: draw the message at one pixel per cell on a hidden canvas,
-	 * then redraw each lit cell as a round dot or a '#'.
+	 * The dot looks: draw the message on a hidden canvas at a few samples per cell, then
+	 * light each cell that is covered enough, as a round dot, a square pixel or a '#'.
 	 */
 	#paintGrid(
 		ctx: CanvasRenderingContext2D,
@@ -446,74 +473,114 @@ export class SignRenderer {
 		cellHeight: number,
 		ink: Paint
 	) {
-		const grid = this.#gridCtx;
-		if (this.#grid.width !== columns || this.#grid.height !== rows) {
-			this.#grid.width = columns;
-			this.#grid.height = rows;
-		}
-		grid.setTransform(1, 0, 0, 1, 0, 0);
-		grid.globalCompositeOperation = 'source-over';
-		grid.clearRect(0, 0, columns, rows);
+		const look = this.#settings.look;
+		const lit: [number, number, string | null][] = [];
+
 		if (layout) {
-			// Letters are drawn pure white, which is how they are told apart from emoji below.
-			grid.scale(1 / mode.snap, 1);
+			const grid = this.#gridCtx;
+			const w = columns * SAMPLES;
+			const h = rows * SAMPLES;
+			if (this.#grid.width !== w || this.#grid.height !== h) {
+				this.#grid.width = w;
+				this.#grid.height = h;
+			}
+			grid.setTransform(1, 0, 0, 1, 0, 0);
+			grid.globalCompositeOperation = 'source-over';
+			grid.clearRect(0, 0, w, h);
+			// Letters and plain strokes are drawn pure white, which is how they are told apart
+			// from emoji and colored strokes below.
+			grid.setTransform(SAMPLES / mode.snap, 0, 0, SAMPLES, 0, 0);
 			this.#paintItem(grid, layout, x, mode, '#fff');
-		}
-		const data = grid.getImageData(0, 0, columns, rows).data;
+			const data = grid.getImageData(0, 0, w, h).data;
+			const full = 255 * SAMPLES * SAMPLES;
 
-		const led = this.#settings.look === 'led';
-		const lit = new Path2D();
-		const unlit = new Path2D();
-		const hashes: [number, number, string | null][] = [];
-		const colored: [number, number, string][] = [];
-		const radius = cellHeight * 0.42;
-		const dot = (path: Path2D, column: number, row: number) => {
-			const cx = (column + 0.5) * cellWidth;
-			const cy = (row + 0.5) * cellHeight;
-			path.moveTo(cx + radius, cy);
-			path.arc(cx, cy, radius, 0, Math.PI * 2);
-		};
-
-		for (let row = 0; row < rows; row++) {
-			for (let column = 0; column < columns; column++) {
-				const i = (row * columns + column) * 4;
-				const on = data[i + 3] >= 110;
-				const white = data[i] > 240 && data[i + 1] > 240 && data[i + 2] > 240;
-				const color = on && !white ? `rgb(${data[i]} ${data[i + 1]} ${data[i + 2]})` : null;
-				if (!led) {
-					if (on) hashes.push([column, row, color]);
-				} else if (!on) dot(unlit, column, row);
-				else if (color) colored.push([column, row, color]);
-				else dot(lit, column, row);
+			for (let row = 0; row < rows; row++) {
+				for (let column = 0; column < columns; column++) {
+					// How much of the cell is covered, and its average color where it is.
+					let a = 0;
+					let r = 0;
+					let g = 0;
+					let b = 0;
+					for (let sy = 0; sy < SAMPLES; sy++) {
+						let i = ((row * SAMPLES + sy) * w + column * SAMPLES) * 4;
+						for (let sx = 0; sx < SAMPLES; sx++, i += 4) {
+							const alpha = data[i + 3];
+							if (!alpha) continue;
+							a += alpha;
+							r += data[i] * alpha;
+							g += data[i + 1] * alpha;
+							b += data[i + 2] * alpha;
+						}
+					}
+					if (a < full * COVERAGE) continue;
+					[r, g, b] = [r / a, g / a, b / a].map(Math.round);
+					lit.push([column, row, r > 240 && g > 240 && b > 240 ? null : `rgb(${r} ${g} ${b})`]);
+				}
 			}
 		}
 
-		if (!led) {
+		if (look === 'ascii') {
 			// Sized so one character is as wide as a cell, like text in a terminal.
 			ctx.font = `700 ${cellWidth / 0.6}px ${MONO}`;
 			ctx.textBaseline = 'middle';
 			ctx.textAlign = 'center';
-			for (const [column, row, color] of hashes) {
+			for (const [column, row, color] of lit) {
 				this.#use(ctx, color ?? ink);
 				ctx.fillText('#', (column + 0.5) * cellWidth, (row + 0.5) * cellHeight);
 			}
+			ctx.globalCompositeOperation = 'source-over';
 			return;
 		}
 
-		// Unlit LEDs glow faintly, as on a real sign.
+		const round = look === 'led';
+		const cell = (path: Path2D, column: number, row: number) => {
+			const cx = (column + 0.5) * cellWidth;
+			const cy = (row + 0.5) * cellHeight;
+			if (round) {
+				const radius = cellHeight * 0.42;
+				path.moveTo(cx + radius, cy);
+				path.arc(cx, cy, radius, 0, Math.PI * 2);
+			} else {
+				const half = cellHeight * 0.44;
+				path.rect(cx - half, cy - half, half * 2, half * 2);
+			}
+		};
+
+		// Unlit dots glow faintly, as on a real sign. They never change, so they are drawn once.
+		const glow = ink === HDR ? '#fff' : ink;
+		const unlitKey = [look, columns, rows, cellWidth, cellHeight, glow].join();
+		if (this.#unlitKey !== unlitKey) {
+			this.#unlitKey = unlitKey;
+			this.#unlit.width = Math.ceil(columns * cellWidth);
+			this.#unlit.height = Math.ceil(rows * cellHeight);
+			const off = this.#unlit.getContext('2d')!;
+			const all = new Path2D();
+			for (let row = 0; row < rows; row++) {
+				for (let column = 0; column < columns; column++) cell(all, column, row);
+			}
+			off.globalAlpha = 0.13;
+			off.fillStyle = glow;
+			off.fill(all);
+		}
 		ctx.globalCompositeOperation = 'source-over';
-		ctx.globalAlpha = 0.13;
-		ctx.fillStyle = ink === HDR ? '#fff' : ink;
-		ctx.fill(unlit);
-		ctx.globalAlpha = 1;
+		ctx.drawImage(this.#unlit, 0, 0);
+
+		const plain = new Path2D();
+		const colored = new Map<string, Path2D>();
+		for (const [column, row, color] of lit) {
+			let path = plain;
+			if (color) {
+				path = colored.get(color) ?? new Path2D();
+				colored.set(color, path);
+			}
+			cell(path, column, row);
+		}
 		this.#use(ctx, ink);
-		ctx.fill(lit);
+		ctx.fill(plain);
 		ctx.globalCompositeOperation = 'source-over';
-		for (const [column, row, color] of colored) {
-			const one = new Path2D();
-			dot(one, column, row);
+		for (const [color, path] of colored) {
 			ctx.fillStyle = color;
-			ctx.fill(one);
+			ctx.fill(path);
 		}
 	}
 
@@ -523,6 +590,7 @@ export class SignRenderer {
 		height: number,
 		margin: number,
 		chase: number,
+		stripes: number,
 		ink: Paint
 	) {
 		const frame = this.#settings.frame;
@@ -532,6 +600,12 @@ export class SignRenderer {
 			this.#use(ctx, ink);
 			ctx.lineWidth = margin * 0.4;
 			ctx.strokeRect(margin / 2, margin / 2, width - margin, height - margin);
+			ctx.globalCompositeOperation = 'source-over';
+			return;
+		}
+
+		if (frame === 'stripes') {
+			this.#paintStripes(ctx, width, height, margin, stripes, ink);
 			return;
 		}
 
@@ -563,6 +637,63 @@ export class SignRenderer {
 		ctx.globalAlpha = 1;
 		this.#use(ctx, ink);
 		ctx.fill(lit);
+		ctx.globalCompositeOperation = 'source-over';
+	}
+
+	/**
+	 * A band of slanted stripes round the edge, like a barber pole, travelling clockwise.
+	 * `phase` is how far they have moved, in stripe widths (0 to 1).
+	 */
+	#paintStripes(
+		ctx: CanvasRenderingContext2D,
+		width: number,
+		height: number,
+		margin: number,
+		phase: number,
+		ink: Paint
+	) {
+		const period = margin * 2;
+		// Each edge is drawn along its own x axis, clockwise, with y running inward. The
+		// stripes are placed by distance round the perimeter, so they meet up at the corners.
+		const edges: [number, number, number, number][] = [
+			[0, 0, 0, width],
+			[width, 0, 0.5, height],
+			[width, height, 1, width],
+			[0, height, 1.5, height]
+		];
+		let start = 0;
+		for (const [ox, oy, turns, length] of edges) {
+			const m = new DOMMatrix().translate(ox, oy).rotate(turns * 180);
+			const band = new Path2D();
+			band.moveTo(0, 0);
+			band.lineTo(length, 0);
+			band.lineTo(length - margin, margin);
+			band.lineTo(margin, margin);
+			band.closePath();
+			ctx.save();
+			ctx.setTransform(ctx.getTransform().multiply(m));
+			ctx.clip(band);
+			const shift = (((start - phase * period) % period) + period) % period;
+			const edge = new Path2D();
+			for (let x = -shift - period; x < length + period; x += period) {
+				// Leaning back, so they seem to roll forward as they move.
+				edge.moveTo(x, 0);
+				edge.lineTo(x + period / 2, 0);
+				edge.lineTo(x + period / 2 - margin, margin);
+				edge.lineTo(x - margin, margin);
+				edge.closePath();
+			}
+			// Faint fill between the stripes, like the unlit bulbs.
+			ctx.globalCompositeOperation = 'source-over';
+			ctx.globalAlpha = 0.22;
+			ctx.fillStyle = ink === HDR ? '#fff' : ink;
+			ctx.fill(band);
+			ctx.globalAlpha = 1;
+			this.#use(ctx, ink);
+			ctx.fill(edge);
+			ctx.restore();
+			start += length;
+		}
 		ctx.globalCompositeOperation = 'source-over';
 	}
 }

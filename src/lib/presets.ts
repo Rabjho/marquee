@@ -18,14 +18,16 @@ export const SIZES = [
 
 export const LOOKS = [
 	{ id: 'smooth', label: 'Smooth' },
-	{ id: 'led', label: 'LED' },
+	{ id: 'led', label: 'Circles' },
+	{ id: 'pixels', label: 'Pixels' },
 	{ id: 'ascii', label: 'ASCII' }
 ] as const;
 
 export const FRAMES = [
 	{ id: 'none', label: 'None' },
 	{ id: 'line', label: 'Line' },
-	{ id: 'bulbs', label: 'Bulbs' }
+	{ id: 'bulbs', label: 'Bulbs' },
+	{ id: 'stripes', label: 'Stripes' }
 ] as const;
 
 export const COLORS = [
