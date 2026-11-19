@@ -5,6 +5,24 @@
 site_name = "marquee"
 site_url = "https://marquee.docs.home/"
 
+# Light/dark toggle in the header; starts by following the system setting.
+[[project.theme.palette]]
+media = "(prefers-color-scheme)"
+toggle.icon = "lucide/sun-moon"
+toggle.name = "Switch to light mode"
+
+[[project.theme.palette]]
+media = "(prefers-color-scheme: light)"
+scheme = "default"
+toggle.icon = "lucide/sun"
+toggle.name = "Switch to dark mode"
+
+[[project.theme.palette]]
+media = "(prefers-color-scheme: dark)"
+scheme = "slate"
+toggle.icon = "lucide/moon"
+toggle.name = "Switch to system preference"
+
 # Serves the theme's fonts and scripts from the site itself, so it works
 # offline.
 [project.plugins.privacy]
