@@ -1,0 +1,10 @@
+# Built from docs/ into https://marquee.docs.home/ on every push to the default
+# branch, by the docs workflow on RAVEN's runner. The nav follows docs/'s
+# folders.
+[project]
+site_name = "marquee"
+site_url = "https://marquee.docs.home/"
+
+# Serves the theme's fonts and scripts from the site itself, so it works
+# offline.
+[project.plugins.privacy]

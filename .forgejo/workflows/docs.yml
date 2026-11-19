@@ -1,0 +1,24 @@
+# Publishes this repo's docs at <repo>.docs.home (ADR-053). Identical in every
+# project: the build lives in raven-docs-publish on core, deployed by Ansible.
+name: docs
+
+on:
+  push:
+    paths: ["docs/**", "zensical.toml", "mkdocs.yml"]
+
+jobs:
+  publish:
+    if: github.ref_name == github.event.repository.default_branch
+    runs-on: host
+    # The runner is capacity 1 - a hung job blocks every later run, so cap it.
+    timeout-minutes: 10
+    steps:
+      - name: Build and publish
+        env:
+          DOCS_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: "$HOME/.local/bin/raven-docs-publish"
+
+      # cancelled() is what the timeout above trips (ADR-038).
+      - name: Notify ntfy on failure
+        if: failure() || cancelled()
+        run: "$HOME/.local/bin/raven-ci-notify ${{ job.status }}"
